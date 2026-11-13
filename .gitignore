@@ -1,0 +1,32 @@
+﻿# Executáveis do FFmpeg
+bin/ffmpeg.exe
+bin/ffprobe.exe
+
+# Ambiente virtual
+.venv/
+venv/
+
+# Arquivos temporários Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Credenciais e configurações privadas
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*token*.json
+*credentials*.json
+
+# Arquivos de mídia gerados
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.zip
+
+# Arquivos temporários
+*.log
+*.tmp
