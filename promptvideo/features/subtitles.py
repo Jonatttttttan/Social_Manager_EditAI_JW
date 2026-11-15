@@ -239,3 +239,91 @@ def legendar_video(video_editado, estilo='Tradicional', callback=None,
     if callback:
         callback(1.0, 'Legendas concluídas')
     return str(destino), str(srt)
+
+
+def _tempo_legenda_manual(valor):
+    """Converte MM:SS[.mmm] em segundos, sem aceitar segundos >= 60."""
+    import math
+    if isinstance(valor, (int, float)):
+        numero = float(valor)
+        if not math.isfinite(numero):
+            raise ValueError('Horário inválido')
+        return numero
+    texto = str(valor).strip().replace(',', '.')
+    partes = texto.split(':')
+    if len(partes) == 2:
+        minutos, segundos = partes
+        if not minutos.isdigit() or not segundos or not segundos.replace('.', '', 1).isdigit():
+            raise ValueError('Horário inválido')
+        seg = float(segundos)
+        if not 0 <= seg < 60:
+            raise ValueError('Segundos fora de 00 a 59')
+        return int(minutos) * 60 + seg
+    if len(partes) == 1:
+        numero = float(texto)
+        if not math.isfinite(numero):
+            raise ValueError('Horário inválido')
+        return numero
+    raise ValueError('Horário inválido')
+
+
+def legendar_manual(video_editado, linhas, callback=None, visual='Clássica', tamanho=100, posicao='Inferior'):
+    """Renderiza legendas informadas pelo usuário sobre o vídeo editado; devolve MP4 e SRT."""
+    import math
+    validar_aparencia(visual, tamanho, posicao)
+    video = Path(video_editado).resolve()
+    if not video.is_file():
+        raise FileNotFoundError(video)
+    info = analisar_video(video)
+    duracao = float(info['duracao'])
+    if hasattr(linhas, 'values'):
+        linhas = linhas.values.tolist()
+    cues = []
+    for indice, linha in enumerate(linhas or [], 1):
+        if not isinstance(linha, (list, tuple)) or len(linha) < 3:
+            raise ValueError(f'Legenda {indice}: informe texto, início e fim.')
+        texto = str(linha[0]).strip() if linha[0] is not None else ''
+        if not texto and all(v is None or str(v).strip() == '' for v in linha[1:3]):
+            continue
+        if not texto:
+            raise ValueError(f'Legenda {indice}: o texto está vazio.')
+        try:
+            inicio, fim = _tempo_legenda_manual(linha[1]), _tempo_legenda_manual(linha[2])
+        except (TypeError, ValueError):
+            raise ValueError(f'Legenda {indice}: use MM:SS (ex.: 00:01 e 00:32) ou MM:SS.mmm.')
+        if not all(map(math.isfinite, (inicio, fim))) or inicio < 0 or fim <= inicio or fim > duracao + .02:
+            raise ValueError(f'Legenda {indice}: use 0 ≤ início < fim ≤ {duracao:.2f}s (duração do vídeo editado).')
+        cues.append((inicio, min(fim, duracao), texto))
+    if not cues:
+        raise ValueError('Adicione pelo menos uma legenda manual válida.')
+    cues.sort(key=lambda x: x[0])
+    destino = video.with_name(video.stem + '_legendas_manuais.mp4')
+    srt = video.with_name(video.stem + '_legendas_manuais.srt')
+    log_path = _log_dir() / ('legendas_manuais_' + datetime.now().strftime('%Y%m%d_%H%M%S_%f') + '.log')
+    if callback:
+        callback(.1, 'Preparando legendas manuais')
+    with tempfile.TemporaryDirectory(prefix='promptvideo_manual_') as temp:
+        tmp = Path(temp)
+        segmentos = [dict(inicio=a, fim=b, texto=t) for a,b,t in cues]
+        (tmp / 'legendas.ass').write_text(_ass(segmentos, 'Tradicional', int(info['largura'] or 1920), int(info['altura'] or 1080), visual, tamanho, posicao), encoding='utf-8-sig')
+        saida_tmp = tmp / 'resultado.mp4'
+        tem_audio = bool(info.get('possui_audio'))
+        cmd = [ffmpeg_bin('ffmpeg'), '-y', '-hide_banner', '-nostdin', '-nostats', '-i', str(video),
+               '-vf', 'ass=legendas.ass,setpts=PTS-STARTPTS', '-map', '0:v:0']
+        if tem_audio:
+            cmd += ['-map', '0:a:0']
+        cmd += ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p']
+        if tem_audio:
+            cmd += ['-c:a', 'aac', '-b:a', '192k', '-af', 'aresample=async=1:first_pts=0']
+        cmd += ['-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', str(saida_tmp)]
+        if callback:
+            callback(.5, 'Inserindo legendas manuais no MP4')
+        with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
+            p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.DEVNULL, stderr=log, creationflags=_flags())
+        if p.returncode != 0 or not saida_tmp.is_file() or not saida_tmp.stat().st_size:
+            raise RuntimeError(f'Falha ao renderizar legendas manuais. Consulte o log: {log_path}')
+        os.replace(saida_tmp, destino)
+    srt.write_text(_srt(cues), encoding='utf-8-sig')
+    if callback:
+        callback(1., 'Legendas manuais concluídas')
+    return str(destino), str(srt)

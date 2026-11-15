@@ -7,9 +7,11 @@ from promptvideo.integrations.instagram import preparar_reel, publicar_reel, sta
 from promptvideo.licensing import ensure_valid, LicenseError
 from promptvideo.core.jobs import preparar_video, aplicar_proposta
 from promptvideo.core.batch import executar_lote
-from promptvideo.features.subtitles import legendar_video, ESTILOS_VISUAIS
+from promptvideo.features.subtitles import legendar_video, legendar_manual, ESTILOS_VISUAIS
 from promptvideo.features.background_music import TRACKS, escolher_musica, adicionar_musica
 from promptvideo.features.video_filters import FILTROS, aplicar_filtro_video
+from promptvideo.features.zoom import aplicar_zoom
+from promptvideo.features.sound_effects import EFFECTS, EFFECT_DIR, aplicar_efeitos
 
 def interface_analisar(video,prompt):
     ensure_valid()
@@ -67,9 +69,39 @@ def interface_lote(arquivos, instrucao, legendas, estilo, progress=gr.Progress()
 
 # Interface acessível: duas jornadas claras, linguagem simples e detalhes técnicos opcionais.
 CSS = """
+/* Prévia do vídeo exportado: tamanho estável, centralizada e responsiva. */
+#jw-final-video {width:100% !important;max-width:750px !important;margin:12px auto 20px !important;}
+#jw-final-video video {display:block !important;width:100% !important;height:420px !important;max-height:420px !important;object-fit:contain !important;background:#05070b !important;border-radius:10px !important;}
+#jw-final-video .video-container {max-height:420px !important;background:#05070b !important;overflow:hidden !important;}
+@media(max-width:640px){#jw-final-video video{height:260px !important;max-height:260px !important;}#jw-final-video .video-container{max-height:260px !important;}}
+
+/* Editor de legendas manuais: contraste consistente com Dark Neon (Gradio 5/6). */
+#jw-manual-captions {--body-text-color:#f4f7ff;--input-background-fill:#111c2d;--background-fill-primary:#111c2d;--background-fill-secondary:#16243a;--border-color-primary:#34465f;}
+#jw-manual-captions table, #jw-manual-captions tbody, #jw-manual-captions tr, #jw-manual-captions td {background:#111c2d !important;color:#f4f7ff !important;}
+#jw-manual-captions th, #jw-manual-captions thead, #jw-manual-captions thead tr {background:#1b2a40 !important;color:#fff !important;}
+#jw-manual-captions td, #jw-manual-captions th {border-color:#354861 !important;}
+#jw-manual-captions input, #jw-manual-captions textarea, #jw-manual-captions [contenteditable=true] {background:#111c2d !important;color:#fff !important;-webkit-text-fill-color:#fff !important;caret-color:#facc15 !important;}
+#jw-manual-captions input::placeholder {color:#aab7ca !important;}
+#jw-manual-captions td:focus-within, #jw-manual-captions td.selected {background:#223654 !important;}
+#jw-add-caption {background:#eab308 !important;color:#101827 !important;border:1px solid #facc15 !important;font-weight:800 !important;}
+#jw-remove-caption {border:1px solid #52637a !important;}
+
 :root { --jw-navy:#07172c; --jw-blue:#174b91; --jw-electric:#3988ff; }
 .gradio-container {max-width: 1200px !important; margin:auto !important; padding-bottom:12px !important;}
 #hero {position:relative;overflow:hidden;padding:34px 38px;border-radius:22px;background:linear-gradient(115deg,#02060d 0%,#081c3b 49%,#164e9a 100%);color:#fff;margin-bottom:18px;box-shadow:0 16px 38px rgba(4,21,49,.22);}
+
+/* Zoom: manter contraste no tema escuro inclusive em foco, hover e seleções. */
+#jw-zoom-help code, #jw-zoom-example code {background:#172335 !important;color:#f8fafc !important;border:1px solid #43566f !important;}
+.jw-zoom-item {background:#111b29 !important;border:1px solid #3c4e65 !important;border-radius:12px !important;padding:12px !important;margin:8px 0 !important;}
+.jw-zoom-item input, .jw-zoom-item input:hover, .jw-zoom-item input:focus,
+.jw-zoom-item textarea, .jw-zoom-item textarea:hover, .jw-zoom-item textarea:focus,
+.jw-zoom-item [role="combobox"], .jw-zoom-item [role="combobox"]:hover,
+.jw-zoom-item .wrap, .jw-zoom-item .wrap:hover {
+ background:#172335 !important;color:#f8fafc !important;-webkit-text-fill-color:#f8fafc !important;
+}
+.jw-zoom-item input::placeholder {color:#aabbd1 !important;opacity:1 !important;}
+.jw-zoom-item input:-webkit-autofill {box-shadow:0 0 0 1000px #172335 inset !important;-webkit-text-fill-color:#f8fafc !important;}
+.jw-zoom-item label, .jw-zoom-item span {color:#f8fafc !important;}
 #hero:after {content:'';position:absolute;right:-60px;top:-110px;width:320px;height:320px;border-radius:50%;background:radial-gradient(circle,rgba(82,153,255,.25),transparent 68%);pointer-events:none;}
 #hero h1,#hero p {color:#fff !important;position:relative;z-index:1;}
 #hero h1 {font-size:clamp(1.65rem,3vw,2.65rem);font-weight:850;letter-spacing:-.035em;margin:9px 0;line-height:1.13;}
@@ -320,7 +352,42 @@ html,body,body > gradio-app {background:#080b10 !important;color:#f5f7fb !import
   opacity:.6 !important;
   cursor:not-allowed !important;
 }
+
+
+/* Social Manager JW — acabamento visual, sem alterar o fluxo de publicação. */
+#ig-result {background:#14251d !important;border:1px solid #35674d !important;border-left:5px solid #4ade80 !important;border-radius:12px !important;padding:14px 17px !important;margin:10px 0 !important;}
+#ig-result, #ig-result p, #ig-result span, #ig-result strong {color:#e7f8ed !important;}
+#ig-result code, #ig-result .prose code, #ig-result p code {background:#0c1820 !important;color:#f8fafc !important;border:1px solid #50647a !important;border-radius:6px !important;padding:4px 8px !important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace !important;font-weight:750 !important;overflow-wrap:anywhere !important;white-space:normal !important;}
+#ig-prepare-btn, #ig-publish-btn, #ig-check-btn {min-height:58px !important;border-radius:13px !important;font-size:1.04rem !important;font-weight:850 !important;letter-spacing:.01em !important;box-shadow:0 7px 18px rgba(0,0,0,.26) !important;transition:transform .15s ease,filter .15s ease,box-shadow .15s ease !important;}
+#ig-prepare-btn {background:#2563eb !important;border:2px solid #60a5fa !important;color:#fff !important;}
+#ig-prepare-btn:hover:not(:disabled) {background:#1d4ed8 !important;box-shadow:0 9px 23px rgba(37,99,235,.3) !important;}
+#ig-publish-btn {background:#facc15 !important;border:2px solid #fde047 !important;color:#111827 !important;}
+#ig-publish-btn:hover:not(:disabled) {background:#fde047 !important;box-shadow:0 9px 23px rgba(250,204,21,.26) !important;}
+#ig-check-btn {background:#26374d !important;border:2px solid #7591b3 !important;color:#fff !important;}
+#ig-check-btn:hover:not(:disabled) {background:#354a65 !important;box-shadow:0 9px 23px rgba(96,165,250,.17) !important;}
+#ig-prepare-btn:disabled, #ig-publish-btn:disabled, #ig-check-btn:disabled {opacity:.57 !important;cursor:not-allowed !important;box-shadow:none !important;transform:none !important;}
+#ig-prepare-btn:focus-visible, #ig-publish-btn:focus-visible, #ig-check-btn:focus-visible {outline:3px solid #fff !important;outline-offset:3px !important;}
+@media(max-width:640px){#ig-prepare-btn,#ig-publish-btn,#ig-check-btn{min-height:54px !important;font-size:.96rem !important;}}
+
 @media(prefers-reduced-motion:reduce){.gradio-container *{scroll-behavior:auto !important;}}
+
+/* Ajuste UX: exemplos inline e edição/hover na grade de legendas. */
+#jw-caption-help :is(code,.prose code),#jw-caption-example :is(code,.prose code) {
+ background:#1c2a3e !important;color:#f8fafc !important;-webkit-text-fill-color:#f8fafc !important;
+ border:1px solid #4b607d !important;border-radius:5px !important;padding:2px 6px !important;
+}
+#jw-manual-captions :is(td,td:hover,td:focus,td:focus-within,td.selected,td.highlighted,td.editing,td[aria-selected="true"]) {
+ background:#152238 !important;color:#f8fafc !important;-webkit-text-fill-color:#f8fafc !important;
+}
+#jw-manual-captions :is(input,textarea,[contenteditable="true"],[role="textbox"],.cell-input,.edit-cell) {
+ background:#152238 !important;color:#f8fafc !important;-webkit-text-fill-color:#f8fafc !important;
+ caret-color:#facc15 !important;color-scheme:dark !important;
+}
+#jw-manual-captions :is(input,textarea,[contenteditable="true"],[role="textbox"]):is(:hover,:focus,:focus-visible,:active) {
+ background:#20324e !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;
+}
+#jw-manual-captions :is(input,textarea)::selection {background:#eab308 !important;color:#111827 !important;}
+#jw-manual-captions :is(td,td *)::selection {background:#eab308 !important;color:#111827 !important;}
 """
 
 EXEMPLOS = {
@@ -376,15 +443,29 @@ def _barra(nome, fracao, etapa, estado='processando'):
             f'<div style="width:{pct}%;background:{cor};height:100%;border-radius:9px"></div></div>'
             f'<small>{descricao}</small></section>')
 
-def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais):
+def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais,*extras):
     ensure_valid()
     if not ident: raise gr.Error('Analise o vídeo antes de confirmar a edição.')
+    zoom_valores = extras[:60]
+    efeitos_valores = extras[60:]
+    eventos_efeitos = [list(efeitos_valores[i+1:i+4]) for i in range(0,len(efeitos_valores),4) if efeitos_valores[i]]
+    # Cada linha possui: ativo, posição, início, fim e intensidade.
+    # Os controles inativos não são enviados ao FFmpeg.
+    intervalos_zoom = [list(zoom_valores[i+1:i+5]) for i in range(0, len(zoom_valores), 5) if zoom_valores[i]]
+    usar_zoom = bool(intervalos_zoom)
+    usar_legendas = (modo_legendas == 'Manuais') or (modo_legendas == 'Automáticas' and leg)
     def trabalho(cb):
-        caminho=aplicar_proposta(ident,cortes,callback=lambda p,s:cb((.72 if leg else 1)*p,s),transicao=transicao,duracao_transicao=duracao_transicao,cortes_manuais=cortes_manuais)
+        caminho=aplicar_proposta(ident,cortes,callback=lambda p,s:cb((.72 if usar_legendas else 1)*p,s),transicao=transicao,duracao_transicao=duracao_transicao,cortes_manuais=cortes_manuais)
+        if usar_zoom:
+            caminho=aplicar_zoom(caminho,intervalos_zoom,callback=lambda msg:cb(.74,msg))
         srt=None
-        if leg:
+        if modo_legendas == 'Manuais':
+            caminho,srt=legendar_manual(caminho,legendas_manuais,callback=lambda p,s:cb(.72+.28*p,s),visual=visual,tamanho=tamanho,posicao=posicao)
+        elif modo_legendas == 'Automáticas' and leg:
             caminho,srt=legendar_video(caminho,estilo,callback=lambda p,s:cb(.72+.28*p,s),visual=visual,tamanho=tamanho,posicao=posicao)
         caminho=adicionar_musica(caminho,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,callback=lambda msg:cb(.98,msg))
+        if eventos_efeitos:
+            caminho=aplicar_efeitos(caminho,eventos_efeitos,callback=lambda msg:cb(.985,msg))
         caminho=aplicar_filtro_video(caminho,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,callback=lambda msg:cb(.99,msg))
         return caminho,srt
     for tipo,dados in _executar_com_eventos(trabalho):
@@ -441,6 +522,26 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     prompt=gr.Textbox(label='Seu pedido de edição',lines=4,placeholder='Ex.: Tire as pausas longas, melhore minha voz e deixe o vídeo com aproximadamente 5 minutos.')
                     exemplo=gr.Dropdown(choices=list(EXEMPLOS),label='Ou escolha uma sugestão pronta',value=None,interactive=True)
                     exemplo.change(preencher_exemplo,exemplo,prompt)
+                    gr.Markdown('**Legendas do vídeo**')
+                    modo_legendas=gr.Radio(choices=['Sem legendas','Automáticas','Manuais'],value='Sem legendas',label='Tipo de legendas')
+                    with gr.Column(visible=False) as painel_manuais:
+                        gr.Markdown('**Digite o texto e os horários de cada legenda.** Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm` para milissegundos. Os horários correspondem ao **vídeo final, após os cortes**. As legendas aparecem no MP4 e também são exportadas em SRT.', elem_id='jw-caption-help')
+                        legendas_manuais=gr.Dataframe(headers=['Texto da legenda','Início (MM:SS)','Fim (MM:SS)'],datatype=['str','str','str'],value=[['Bem-vindos ao vídeo!','00:00','00:03']],row_count=(1,'dynamic'),col_count=(3,'fixed'),type='array',label='Legendas personalizadas',interactive=True,elem_id='jw-manual-captions')
+                        with gr.Row():
+                            adicionar_legenda=gr.Button('＋ Adicionar legenda',variant='primary',elem_id='jw-add-caption')
+                            remover_legenda=gr.Button('− Remover última legenda',variant='secondary',elem_id='jw-remove-caption')
+                        gr.Markdown('**Exemplo:** `Olá, pessoal!` | `00:01` | `00:04`  ·  Para apagar uma legenda específica, limpe sua linha ou use o menu da tabela.',elem_classes=['helper'],elem_id='jw-caption-example')
+                        def _adicionar_linha_legenda(linhas):
+                            if hasattr(linhas,'values'): linhas=linhas.values.tolist()
+                            linhas=[list(l) for l in (linhas or [])]
+                            linhas.append(['','00:00','00:03'])
+                            return linhas
+                        def _remover_linha_legenda(linhas):
+                            if hasattr(linhas,'values'): linhas=linhas.values.tolist()
+                            linhas=[list(l) for l in (linhas or [])]
+                            return linhas[:-1] if len(linhas)>1 else [['','00:00','00:03']]
+                        adicionar_legenda.click(_adicionar_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
+                        remover_legenda.click(_remover_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
                     gr.Markdown('**Legendas automáticas**')
                     ativar_legendas=gr.Checkbox(label='Adicionar legendas ao vídeo final',value=False)
                     estilo=gr.Radio(choices=['Tradicional','Dinâmica'],value='Tradicional',label='Como mostrar as legendas',visible=False)
@@ -449,7 +550,51 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                         tamanho=gr.Slider(minimum=60,maximum=160,step=10,value=100,label='Tamanho da legenda (%)')
                         posicao=gr.Radio(choices=['Inferior','Centro','Superior'],value='Inferior',label='Posição da legenda')
                         gr.Markdown('**Dica:** “Palavra destacada” combina com o modo Dinâmica. As escolhas são aplicadas ao MP4 exportado.')
-                    ativar_legendas.change(lambda x: (gr.update(visible=x),gr.update(visible=x)),ativar_legendas,[estilo,aparencia])
+                    # Registre os eventos somente depois de criar todos os componentes.
+                    # As legendas manuais utilizam as opcoes visuais, sem exigir a caixa de legendas automaticas.
+                    modo_legendas.change(
+                        lambda m: (
+                            gr.update(visible=m == 'Manuais'),
+                            gr.update(value=m == 'Automáticas', visible=m == 'Automáticas'),
+                            gr.update(visible=m == 'Automáticas'),
+                            gr.update(visible=m in ('Manuais', 'Automáticas')),
+                        ),
+                        inputs=modo_legendas,
+                        outputs=[painel_manuais, ativar_legendas, estilo, aparencia],
+                    )
+                    ativar_legendas.change(
+                        lambda x: gr.update(visible=bool(x)),
+                        inputs=ativar_legendas,
+                        outputs=estilo,
+                    )
+                    with gr.Accordion('🔎 Zoom programável · Opcional', open=False):
+                        gr.Markdown('Escolha a posição, o horário de início e fim e a intensidade de cada zoom. Horários no formato **MM:SS**, por exemplo **00:01 até 00:32** (ou **MM:SS.mmm**). Os intervalos são relativos ao vídeo final e não podem se sobrepor.', elem_id='jw-zoom-help')
+                        gr.Markdown('**Intervalos de zoom**')
+                        zoom_controles = []
+                        zoom_grupos = []
+                        MAX_ZOOMS = 12
+                        for indice_zoom in range(MAX_ZOOMS):
+                            with gr.Group(visible=(indice_zoom == 0), elem_classes=['jw-zoom-item']) as grupo_zoom:
+                                gr.Markdown(f'**Zoom {indice_zoom + 1}**')
+                                with gr.Row():
+                                    zoom_pos = gr.Dropdown(choices=['Esquerda','Centro','Direita'], value='Centro', label='Posição', interactive=True, elem_classes=['jw-zoom-select'])
+                                    zoom_inicio = gr.Textbox(value='00:01', label='Início (MM:SS)', placeholder='00:01', interactive=True)
+                                    zoom_fim = gr.Textbox(value='00:04', label='Fim (MM:SS)', placeholder='00:04', interactive=True)
+                                    zoom_intensidade = gr.Dropdown(choices=['1.2x','1.5x','2.0x'], value='1.5x', label='Intensidade', interactive=True, elem_classes=['jw-zoom-select'])
+                                zoom_ativo = gr.State(indice_zoom == 0)
+                                zoom_controles.extend([zoom_ativo, zoom_pos, zoom_inicio, zoom_fim, zoom_intensidade])
+                                zoom_grupos.append(grupo_zoom)
+                        zoom_quantidade = gr.State(1)
+                        with gr.Row():
+                            adicionar_zoom = gr.Button('＋ Adicionar zoom', variant='primary')
+                            remover_zoom = gr.Button('− Remover último zoom', variant='secondary')
+                        def _alterar_quantidade_zooms(qtd, incremento):
+                            novo = max(1, min(MAX_ZOOMS, int(qtd) + incremento))
+                            return [novo] + [gr.update(visible=(i < novo)) for i in range(MAX_ZOOMS)] + [i < novo for i in range(MAX_ZOOMS)]
+                        saidas_zoom = [zoom_quantidade] + zoom_grupos + zoom_controles[::5]
+                        adicionar_zoom.click(lambda n: _alterar_quantidade_zooms(n, 1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
+                        remover_zoom.click(lambda n: _alterar_quantidade_zooms(n, -1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
+                        gr.Markdown('**Exemplo:** posição **Esquerda**, início **00:03**, fim **00:08**, intensidade **1.2x**. Máximo de 12 intervalos.', elem_id='jw-zoom-example')
                     analisar=gr.Button('🔍 Analisar meu vídeo',variant='primary',elem_id='primary-action')
             identificador=gr.State('')
             gr.Markdown('### ③ Personalize e exporte',elem_classes=['jw-section-heading'])
@@ -483,6 +628,37 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                         fade_musica=gr.Checkbox(value=True,label='🌅 Fade suave no início e fim da música')
                         trilha.change(lambda nome: str(escolher_musica(nome)) if nome not in ('Sem música','Arquivo próprio') else None,inputs=trilha,outputs=musica_preview)
                         arquivo_musica.change(lambda arq: arq,inputs=arquivo_musica,outputs=musica_preview)
+
+                    with gr.Accordion('🔊 Efeitos sonoros programáveis · Opcional',open=False):
+                        gr.Markdown('Escolha o efeito, o **momento no vídeo final** em `MM:SS` (ou `MM:SS.mmm`) e o volume. Cada efeito toca uma vez, a partir do horário indicado.')
+                        efeito_preview_nome=gr.Dropdown(choices=list(EFFECTS),value=EFFECTS[0],label='▶ Ouvir efeito da biblioteca')
+                        efeito_preview_audio=gr.Audio(label='Prévia do efeito',interactive=False,value=str(EFFECT_DIR/(EFFECTS[0]+'.wav')))
+                        efeito_preview_nome.change(lambda nome: str(EFFECT_DIR/(nome+'.wav')),efeito_preview_nome,efeito_preview_audio)
+                        fx_controles=[]
+                        fx_grupos=[]
+                        MAX_FX=12
+                        for i_fx in range(MAX_FX):
+                            with gr.Group(visible=(i_fx==0),elem_classes=['jw-zoom-item']) as fx_grupo:
+                                gr.Markdown(f'**Efeito {i_fx+1}**')
+                                with gr.Row():
+                                    fx_nome=gr.Dropdown(choices=list(EFFECTS),value=EFFECTS[0],label='Efeito sonoro',interactive=True)
+                                    fx_inicio=gr.Textbox(value='00:03',label='Momento (MM:SS)',interactive=True)
+                                    fx_volume=gr.Slider(minimum=0,maximum=100,step=5,value=70,label='Volume (%)')
+                                fx_ativo=gr.State(i_fx==0)
+                                fx_controles.extend([fx_ativo,fx_nome,fx_inicio,fx_volume])
+                                fx_grupos.append(fx_grupo)
+                        fx_quantidade=gr.State(1)
+                        with gr.Row():
+                            fx_adicionar=gr.Button('＋ Adicionar efeito',variant='primary')
+                            fx_remover=gr.Button('− Remover último efeito',variant='secondary')
+                        def _alterar_qtd_fx(qtd,delta):
+                            novo=max(1,min(MAX_FX,int(qtd)+delta))
+                            return [novo]+[gr.update(visible=i<novo) for i in range(MAX_FX)]+[i<novo for i in range(MAX_FX)]
+                        fx_saidas=[fx_quantidade]+fx_grupos+fx_controles[::4]
+                        fx_adicionar.click(lambda n:_alterar_qtd_fx(n,1),fx_quantidade,fx_saidas,queue=False)
+                        fx_remover.click(lambda n:_alterar_qtd_fx(n,-1),fx_quantidade,fx_saidas,queue=False)
+                        gr.Markdown('Até 12 efeitos por vídeo. Os efeitos podem coincidir no tempo e são misturados com a música e a voz.')
+
                 with gr.Column(scale=1, min_width=300):
                     with gr.Accordion('🎨 Filtros e cor · Opcional',open=False):
                         gr.Markdown('Escolha um estilo de cor para o vídeo final. Intensidade 0% desativa o preset, mantendo os ajustes manuais de brilho e contraste.')
@@ -494,7 +670,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             aplicar=gr.Button('✦ Gerar meu vídeo',variant='primary',visible=False,elem_id='export-action')
             progresso_individual=gr.HTML(label='Progresso da edição')
             status=gr.Markdown(visible=False)
-            resultado=gr.Video(label='Confira seu vídeo editado',format='mp4',visible=False)
+            resultado=gr.Video(label='Confira seu vídeo editado',format='mp4',visible=False,elem_id='jw-final-video')
             pronto_individual=gr.HTML('<section class="jw-ready" role="status"><h3>✓ Seu vídeo está pronto para baixar!</h3><p>⬇ Na caixa amarela logo abaixo, clique no nome do arquivo MP4 ou no ícone de download. O arquivo de legendas também estará disponível quando solicitado.</p></section>',visible=False)
             download=gr.File(label='⬇ DOWNLOAD — Clique para baixar o vídeo MP4',visible=False,elem_id='download-video')
             arquivo_srt=gr.File(label='Baixar arquivo de legendas SRT',visible=False)
@@ -506,13 +682,13 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     ig_id = gr.Textbox(label='ID da conta Instagram (teste)', placeholder='ID numérico da conta')
                     ig_token = gr.Textbox(label='Token da Meta (somente teste local)', type='password', placeholder='Cole seu token aqui; não será salvo em arquivo')
                     ig_caption = gr.Textbox(label='Legenda do Reel', lines=3, placeholder='Descrição e hashtags')
-                    ig_preparar = gr.Button('1. Enviar vídeo para preparação', variant='secondary')
+                    ig_preparar = gr.Button('📤 1. Enviar vídeo para preparação', variant='secondary', elem_id='ig-prepare-btn')
                     ig_container = gr.State(value=None)
                     ig_ready = gr.State(value=False)
                     ig_account = gr.State(value=None)
-                    ig_resultado = gr.Markdown('O envio para preparação **não publica** o vídeo.')
+                    ig_resultado = gr.Markdown('O envio para preparação **não publica** o vídeo.', elem_id='ig-result')
                     ig_confirmar = gr.Checkbox(label='Confirmo que desejo publicar este Reel na minha conta do Instagram.', value=False, interactive=False)
-                    ig_publicar = gr.Button('2. Publicar Reel agora', variant='primary', interactive=False)
+                    ig_publicar = gr.Button('🚀 2. Publicar Reel agora', variant='primary', interactive=False, elem_id='ig-publish-btn')
                     def _ig_preparar(video_path, account, token, caption):
                         # Gerador: informa o andamento sem publicar automaticamente.
                         yield None, False, None, '⏳ Validando vídeo e iniciando upload...', gr.update(value=False, interactive=False), gr.update(interactive=False)
@@ -592,12 +768,12 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                             return f'✅ Reel publicado! ID: `{mid}`. Para excluir, use o aplicativo Instagram.', None, False, gr.update(value=False, interactive=False), gr.update(interactive=False)
                         except InstagramPublishError as exc:
                             return f'❌ {exc}', cid, False, gr.update(value=False, interactive=False), gr.update(interactive=False)
-                    ig_verificar = gr.Button('Verificar processamento novamente', variant='secondary')
+                    ig_verificar = gr.Button('🔄 Verificar processamento novamente', variant='secondary', elem_id='ig-check-btn')
                     ig_preparar.click(_ig_preparar, [download,ig_id,ig_token,ig_caption], [ig_container,ig_ready,ig_account,ig_resultado,ig_confirmar,ig_publicar], concurrency_limit=1)
                     ig_verificar.click(_ig_verificar, [ig_container,ig_id,ig_token,ig_account], [ig_ready,ig_resultado,ig_confirmar,ig_publicar], concurrency_limit=1)
                     ig_confirmar.change(_ig_confirmacao, [ig_confirmar,ig_ready], [ig_publicar], queue=False)
                     ig_publicar.click(_ig_publicar, [ig_id,ig_token,ig_container,ig_confirmar,ig_ready,ig_account], [ig_resultado,ig_container,ig_ready,ig_confirmar,ig_publicar], concurrency_limit=1)
-            aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais],[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
+            aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
             aplicar.click(lambda: (None, False, None, gr.update(value=False, interactive=False), gr.update(interactive=False), ''), outputs=[ig_container,ig_ready,ig_account,ig_confirmar,ig_publicar,ig_resultado], queue=False)
 
             for entrada in (video,prompt):

@@ -6,7 +6,7 @@ from pathlib import Path
 from promptvideo.core.media import analisar_video, executar, ffmpeg_bin
 
 MUSIC_DIR = Path(__file__).resolve().parents[1] / 'music'
-TRACKS = ('Sem música', 'Ambient Suave', 'Piano Calmo', 'Energia Leve', 'Arquivo próprio')
+TRACKS = ('Sem música', 'Ambient Suave', 'Piano Calmo', 'Energia Leve', 'Aurora Digital', 'Horizonte Calmo', 'Noite Cinemática', 'Pulso Tecnológico', 'Viagem Serena', 'Suspense Sutil', 'Inspiração Leve', 'Documentário Natural', 'Foco Criativo', 'Energia Positiva', 'Piano Noturno', 'Descoberta', 'Arquivo próprio')
 EXTENSIONS = frozenset(('.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg'))
 
 def escolher_musica(nome='Sem música', arquivo=None):

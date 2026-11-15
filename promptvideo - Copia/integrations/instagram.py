@@ -310,7 +310,10 @@ def status_reel(container_id, token):
         }
     )
 
-    return dados.get("status_code")
+    estado = dados.get("status_code")
+    if estado not in ("IN_PROGRESS", "FINISHED", "ERROR", "EXPIRED", "PUBLISHED"):
+        raise InstagramPublishError("A Meta retornou um status de processamento inesperado.")
+    return estado
 
 
 def publicar_reel(account_id, container_id, token):
