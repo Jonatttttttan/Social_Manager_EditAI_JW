@@ -1,5 +1,7 @@
 import json, traceback, html, queue, threading, time
 import hashlib
+import webbrowser
+from promptvideo.integrations.instagram_oauth_client import InstagramOAuthClientError, conectar_instagram, status_instagram, desconectar_instagram, preparar_reel_servidor, criar_container_reel, consultar_reel, publicar_reel_servidor
 from pathlib import Path
 import gradio as gr
 from promptvideo.config import SAIDAS
@@ -688,103 +690,82 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             with gr.Group(visible=False) as instagram_panel:
                 gr.Markdown('### 📱 Social Manager JW — Instagram Reels')
                 gr.Markdown('**Deseja publicar o vídeo editado no Instagram?** Opcional. O download acima continua disponível.')
-                with gr.Accordion('Sim, quero publicar no Instagram', open=False):
-                    ig_id = gr.Textbox(label='ID da conta Instagram (teste)', placeholder='ID numérico da conta')
-                    ig_token = gr.Textbox(label='Token da Meta (somente teste local)', type='password', placeholder='Cole seu token aqui; não será salvo em arquivo')
-                    ig_caption = gr.Textbox(label='Legenda do Reel', lines=3, placeholder='Descrição e hashtags')
-                    ig_preparar = gr.Button('📤 1. Enviar vídeo para preparação', variant='secondary', elem_id='ig-prepare-btn')
-                    ig_container = gr.State(value=None)
-                    ig_ready = gr.State(value=False)
-                    ig_account = gr.State(value=None)
-                    ig_resultado = gr.Markdown('O envio para preparação **não publica** o vídeo.', elem_id='ig-result')
-                    ig_confirmar = gr.Checkbox(label='Confirmo que desejo publicar este Reel na minha conta do Instagram.', value=False, interactive=False)
-                    ig_publicar = gr.Button('🚀 2. Publicar Reel agora', variant='primary', interactive=False, elem_id='ig-publish-btn')
-                    def _ig_preparar(video_path, account, token, caption):
-                        # Gerador: informa o andamento sem publicar automaticamente.
-                        yield None, False, None, '⏳ Validando vídeo e iniciando upload...', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        try:
-                            if not video_path:
-                                raise InstagramPublishError('Nenhum vídeo exportado foi selecionado para envio.')
-                            caminho = Path(video_path)
-                            if not caminho.is_file():
-                                raise InstagramPublishError('O arquivo de vídeo exportado não foi encontrado.')
-
-                            # Diagnóstico local: não imprime token, legenda ou URL de upload.
-                            digest = hashlib.sha256()
-                            with caminho.open('rb') as arquivo:
-                                for bloco in iter(lambda: arquivo.read(1024 * 1024), b''):
-                                    digest.update(bloco)
-                            print('[IG DIAGNOSTICO] Caminho:', caminho, flush=True)
-                            print('[IG DIAGNOSTICO] Tamanho:', caminho.stat().st_size, flush=True)
-                            print('[IG DIAGNOSTICO] SHA256:', digest.hexdigest(), flush=True)
-
-                            # Teste controlado: usar o MP4 original exportado, nao a copia do Gradio.
-                            # A verificacao de hash evita enviar um arquivo antigo com o mesmo nome.
-                            caminho_original = Path(SAIDAS) / caminho.name
-                            if not caminho_original.is_file():
-                                raise InstagramPublishError(
-                                    f'Video original nao encontrado: {caminho_original}'
-                                )
-                            digest_original = hashlib.sha256()
-                            with caminho_original.open('rb') as arquivo:
-                                for bloco in iter(lambda: arquivo.read(1024 * 1024), b''):
-                                    digest_original.update(bloco)
-                            if digest_original.hexdigest() != digest.hexdigest():
-                                raise InstagramPublishError(
-                                    'O video original nao corresponde ao video exibido no Gradio. '
-                                    'Gere novamente o video antes de enviar.'
-                                )
-                            print('[IG DIAGNOSTICO] Enviando original:', caminho_original, flush=True)
-                            cid = preparar_reel(str(caminho_original), (account or '').strip(), token, caption)
-                            print('[INSTAGRAM] Container preparado; aguardando processamento.', flush=True)
-                            yield cid, False, (account or '').strip(), '⏳ Upload aceito. Aguardando processamento pela Meta...', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                            # A Meta pode levar vários minutos. Após o limite, o usuário pode tentar novamente.
-                            for tentativa in range(1, 21):
-                                estado = status_reel(cid, token)
-                                print(f'[INSTAGRAM] Processamento {tentativa}/20: {estado}', flush=True)
-                                if estado == 'FINISHED':
-                                    yield cid, True, (account or '').strip(), '✅ Reel processado e pronto. Marque a confirmação para habilitar a publicação.', gr.update(value=False, interactive=True), gr.update(interactive=False)
-                                    return
-                                if estado in ('ERROR', 'EXPIRED'):
-                                    yield cid, False, (account or '').strip(), f'❌ Processamento encerrado pela Meta: {estado}. Gere um novo envio.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                                    return
-                                if tentativa < 20:
-                                    yield cid, False, (account or '').strip(), f'⏳ Meta processando o Reel: {estado or "sem status"}. Verificação {tentativa}/20.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                                    time.sleep(15)
-                            yield cid, False, (account or '').strip(), '⚠️ Tempo de espera atingido. Clique em “Verificar processamento novamente”. Nenhuma publicação foi feita.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        except InstagramPublishError as exc:
-                            yield None, False, None, f'❌ {exc}', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        except OSError:
-                            yield None, False, None, '❌ Não foi possível ler o arquivo de vídeo para diagnóstico.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                    def _ig_verificar(cid, account, token, account_original):
-                        if not cid or not account_original or (account or '').strip() != account_original:
-                            return False, '⚠️ Envie um Reel e mantenha a mesma conta Instagram.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        try:
-                            estado = status_reel(cid, token)
-                            if estado == 'FINISHED':
-                                return True, '✅ Reel pronto para publicação. Confirme para habilitar o botão.', gr.update(value=False, interactive=True), gr.update(interactive=False)
-                            if estado in ('ERROR', 'EXPIRED'):
-                                return False, f'❌ Processamento encerrado: {estado}. Faça outro envio.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                            return False, f'⏳ Processamento ainda em andamento: {estado}. Tente novamente mais tarde.', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        except InstagramPublishError as exc:
-                            return False, f'❌ {exc}', gr.update(value=False, interactive=False), gr.update(interactive=False)
-                    def _ig_confirmacao(checked, pronto):
-                        return gr.update(interactive=bool(checked and pronto))
-                    def _ig_publicar(account, token, cid, confirmado, pronto, account_original):
-                        if not confirmado or not pronto or not cid or (account or '').strip() != account_original:
-                            return '⚠️ Aguarde o processamento e confirme a publicação na conta original.', cid, pronto, gr.update(value=False, interactive=pronto), gr.update(interactive=False)
-                        try:
-                            mid = publicar_reel((account or '').strip(), cid, token)
-                            return f'✅ Reel publicado! ID: `{mid}`. Para excluir, use o aplicativo Instagram.', None, False, gr.update(value=False, interactive=False), gr.update(interactive=False)
-                        except InstagramPublishError as exc:
-                            return f'❌ {exc}', cid, False, gr.update(value=False, interactive=False), gr.update(interactive=False)
-                    ig_verificar = gr.Button('🔄 Verificar processamento novamente', variant='secondary', elem_id='ig-check-btn')
-                    ig_preparar.click(_ig_preparar, [download,ig_id,ig_token,ig_caption], [ig_container,ig_ready,ig_account,ig_resultado,ig_confirmar,ig_publicar], concurrency_limit=1)
-                    ig_verificar.click(_ig_verificar, [ig_container,ig_id,ig_token,ig_account], [ig_ready,ig_resultado,ig_confirmar,ig_publicar], concurrency_limit=1)
-                    ig_confirmar.change(_ig_confirmacao, [ig_confirmar,ig_ready], [ig_publicar], queue=False)
-                    ig_publicar.click(_ig_publicar, [ig_id,ig_token,ig_container,ig_confirmar,ig_ready,ig_account], [ig_resultado,ig_container,ig_ready,ig_confirmar,ig_publicar], concurrency_limit=1)
+                gr.Markdown('### Conexão segura com Instagram')
+                gr.Markdown('O token da Meta permanece no servidor. Publicação experimental somente no ambiente local.')
+                with gr.Row():
+                    ig_oauth_conectar = gr.Button('🔗 Conectar Instagram', variant='primary')
+                    ig_oauth_status = gr.Button('🔄 Verificar conexão')
+                    ig_oauth_desconectar = gr.Button('Desconectar')
+                ig_oauth_mensagem = gr.Markdown('Clique em **Verificar conexão** para consultar a conta autorizada.')
+                def _ig_oauth_conectar():
+                    try:
+                        url = conectar_instagram()
+                        webbrowser.open(url, new=2)
+                        return '🔗 Autorização aberta no navegador. Após concluir, clique em **Verificar conexão**.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                def _ig_oauth_status():
+                    try:
+                        dados = status_instagram()
+                        if dados.get('connected'):
+                            return f"✅ Instagram conectado: **@{dados.get('username') or 'conta autorizada'}** (ID: `{dados.get('instagram_id') or 'indisponível'}`)."
+                        return 'ℹ️ Nenhuma conta Instagram conectada a esta licença/dispositivo.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                def _ig_oauth_desconectar():
+                    try:
+                        desconectar_instagram()
+                        return '✅ Conexão removida do servidor local. Isso não revoga o acesso na Meta.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                ig_oauth_conectar.click(_ig_oauth_conectar, outputs=ig_oauth_mensagem)
+                ig_oauth_status.click(_ig_oauth_status, outputs=ig_oauth_mensagem)
+                ig_oauth_desconectar.click(_ig_oauth_desconectar, outputs=ig_oauth_mensagem)
+                gr.Markdown('### Publicar Reel — teste local')
+                ig_caption_nova = gr.Textbox(label='Legenda do Reel', lines=3, placeholder='Descrição e hashtags')
+                ig_job_novo = gr.State(value=None)
+                ig_pronto_novo = gr.State(value=False)
+                ig_resultado_novo = gr.Markdown('Primeiro exporte o vídeo e prepare o Reel. Nada será publicado automaticamente.')
+                with gr.Row():
+                    ig_preparar_novo = gr.Button('📤 Preparar Reel (não publica)')
+                    ig_verificar_novo = gr.Button('🔄 Verificar processamento')
+                ig_confirmar_novo = gr.Checkbox(label='Confirmo que desejo publicar este Reel na conta Instagram conectada.', value=False)
+                ig_publicar_novo = gr.Button('🚀 Publicar Reel agora', variant='primary', interactive=False)
+                def _ig_nova_preparacao(video_path, caption):
+                    try:
+                        if not video_path:
+                            raise InstagramOAuthClientError('Exporte um vídeo antes de preparar o Reel.')
+                        dados = preparar_reel_servidor(str(video_path), caption or '')
+                        job = dados['job_id']
+                        criar_container_reel(job)
+                        return job, False, '⏳ Vídeo enviado. A Meta está processando; clique em Verificar processamento.', gr.update(value=False), gr.update(interactive=False)
+                    except (InstagramOAuthClientError, KeyError, ValueError) as exc:
+                        return None, False, f'❌ {exc}', gr.update(value=False), gr.update(interactive=False)
+                def _ig_nova_verificacao(job):
+                    if not job:
+                        return False, '⚠️ Prepare o Reel primeiro.', gr.update(value=False), gr.update(interactive=False)
+                    try:
+                        dados = consultar_reel(job)
+                        ready = bool(dados.get('ready'))
+                        return ready, ('✅ Reel pronto. Confirme a publicação.' if ready else f"⏳ Estado: {dados.get('state', 'UNKNOWN')}"), gr.update(value=False), gr.update(interactive=False)
+                    except InstagramOAuthClientError as exc:
+                        return False, f'❌ {exc}', gr.update(value=False), gr.update(interactive=False)
+                def _ig_nova_confirmacao(confirmado, pronto):
+                    return gr.update(interactive=bool(confirmado and pronto))
+                def _ig_nova_publicacao(job, confirmado, pronto):
+                    if not (job and confirmado and pronto):
+                        return '⚠️ Verifique o processamento e confirme a publicação.', job, pronto, gr.update(value=False), gr.update(interactive=False)
+                    try:
+                        dados = publicar_reel_servidor(job)
+                        return f"✅ Reel publicado! ID: `{dados['media_id']}`", None, False, gr.update(value=False), gr.update(interactive=False)
+                    except (InstagramOAuthClientError, KeyError) as exc:
+                        return f'❌ {exc} Não clique novamente sem verificar o resultado na Meta.', job, False, gr.update(value=False), gr.update(interactive=False)
+                ig_preparar_novo.click(_ig_nova_preparacao, [download, ig_caption_nova], [ig_job_novo, ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
+                ig_verificar_novo.click(_ig_nova_verificacao, [ig_job_novo], [ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
+                ig_confirmar_novo.change(_ig_nova_confirmacao, [ig_confirmar_novo, ig_pronto_novo], [ig_publicar_novo], queue=False)
+                ig_publicar_novo.click(_ig_nova_publicacao, [ig_job_novo, ig_confirmar_novo, ig_pronto_novo], [ig_resultado_novo, ig_job_novo, ig_pronto_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
             aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
-            aplicar.click(lambda: (None, False, None, gr.update(value=False, interactive=False), gr.update(interactive=False), ''), outputs=[ig_container,ig_ready,ig_account,ig_confirmar,ig_publicar,ig_resultado], queue=False)
+            aplicar.click(lambda: (None, False, '', gr.update(value=False), gr.update(interactive=False)), outputs=[ig_job_novo,ig_pronto_novo,ig_resultado_novo,ig_confirmar_novo,ig_publicar_novo], queue=False)
 
             for entrada in (video,prompt):
                 entrada.change(limpar_analise,outputs=[identificador,resumo,cortes,transcricao,aplicar])

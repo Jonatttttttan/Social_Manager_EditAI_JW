@@ -1,5 +1,7 @@
 import json, traceback, html, queue, threading, time
 import hashlib
+import webbrowser
+from promptvideo.integrations.instagram_oauth_client import InstagramOAuthClientError, conectar_instagram, status_instagram, desconectar_instagram
 from pathlib import Path
 import gradio as gr
 from promptvideo.config import SAIDAS
@@ -388,6 +390,15 @@ html,body,body > gradio-app {background:#080b10 !important;color:#f5f7fb !import
 }
 #jw-manual-captions :is(input,textarea)::selection {background:#eab308 !important;color:#111827 !important;}
 #jw-manual-captions :is(td,td *)::selection {background:#eab308 !important;color:#111827 !important;}
+
+/* UX: títulos e descrições dos recursos de legendas e zoom. */
+.jw-feature-intro {margin:20px 0 11px !important;padding:15px 17px !important;background:#141c28 !important;border:1px solid #344256 !important;border-left:4px solid #facc15 !important;border-radius:12px !important;}
+.jw-feature-intro h3 {margin:0 0 7px !important;color:#facc15 !important;font-size:1.22rem !important;font-weight:850 !important;line-height:1.3 !important;}
+.jw-feature-intro p {margin:0 !important;color:#d3deed !important;font-size:.92rem !important;line-height:1.55 !important;}
+#jw-zoom-section {margin-top:18px !important;border:1px solid #44536b !important;border-radius:12px !important;background:#141c28 !important;overflow:hidden !important;}
+#jw-zoom-section > button, #jw-zoom-section > .label-wrap, #jw-zoom-section > .label-wrap > button {color:#facc15 !important;font-weight:850 !important;font-size:1.16rem !important;}
+#jw-zoom-section > button:hover, #jw-zoom-section > .label-wrap:hover {background:#1d2a3b !important;}
+@media(max-width:640px){.jw-feature-intro{padding:12px 13px !important}.jw-feature-intro h3{font-size:1.1rem !important}}
 """
 
 EXEMPLOS = {
@@ -522,7 +533,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     prompt=gr.Textbox(label='Seu pedido de edição',lines=4,placeholder='Ex.: Tire as pausas longas, melhore minha voz e deixe o vídeo com aproximadamente 5 minutos.')
                     exemplo=gr.Dropdown(choices=list(EXEMPLOS),label='Ou escolha uma sugestão pronta',value=None,interactive=True)
                     exemplo.change(preencher_exemplo,exemplo,prompt)
-                    gr.Markdown('**Legendas do vídeo**')
+                    gr.HTML('<section class="jw-feature-intro"><h3>▣ Legendas do vídeo</h3><p>Escolha como as legendas serão criadas: sem legendas, geradas automaticamente a partir das falas ou escritas por você com horários personalizados.</p></section>')
                     modo_legendas=gr.Radio(choices=['Sem legendas','Automáticas','Manuais'],value='Sem legendas',label='Tipo de legendas')
                     with gr.Column(visible=False) as painel_manuais:
                         gr.Markdown('**Digite o texto e os horários de cada legenda.** Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm` para milissegundos. Os horários correspondem ao **vídeo final, após os cortes**. As legendas aparecem no MP4 e também são exportadas em SRT.', elem_id='jw-caption-help')
@@ -542,7 +553,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                             return linhas[:-1] if len(linhas)>1 else [['','00:00','00:03']]
                         adicionar_legenda.click(_adicionar_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
                         remover_legenda.click(_remover_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
-                    gr.Markdown('**Legendas automáticas**')
+                    gr.HTML('<section class="jw-feature-intro"><h3>✦ Legendas automáticas</h3><p>O EditAI transcreve as falas e sincroniza as legendas. Selecione <strong>Automáticas</strong> acima para ativar e personalizar o estilo.</p></section>')
                     ativar_legendas=gr.Checkbox(label='Adicionar legendas ao vídeo final',value=False)
                     estilo=gr.Radio(choices=['Tradicional','Dinâmica'],value='Tradicional',label='Como mostrar as legendas',visible=False)
                     with gr.Column(visible=False) as aparencia:
@@ -567,8 +578,9 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                         inputs=ativar_legendas,
                         outputs=estilo,
                     )
-                    with gr.Accordion('🔎 Zoom programável · Opcional', open=False):
-                        gr.Markdown('Escolha a posição, o horário de início e fim e a intensidade de cada zoom. Horários no formato **MM:SS**, por exemplo **00:01 até 00:32** (ou **MM:SS.mmm**). Os intervalos são relativos ao vídeo final e não podem se sobrepor.', elem_id='jw-zoom-help')
+                    gr.HTML('<section class="jw-feature-intro"><h3>🔎 Zoom programável</h3><p>Aproxime suavemente partes do vídeo para destacar detalhes. Defina a posição, a intensidade e os horários; abra a seção abaixo para configurar os zooms.</p></section>')
+                    with gr.Accordion('🔎 Zoom programável · Opcional', open=False, elem_id='jw-zoom-section'):
+                        gr.Markdown('**Destaque momentos importantes com uma aproximação suave.** Escolha esquerda, centro ou direita, a intensidade e o intervalo de cada zoom. Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm`. Os horários se referem ao vídeo final, após os cortes, e não podem se sobrepor.', elem_id='jw-zoom-help')
                         gr.Markdown('**Intervalos de zoom**')
                         zoom_controles = []
                         zoom_grupos = []
@@ -678,7 +690,39 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             with gr.Group(visible=False) as instagram_panel:
                 gr.Markdown('### 📱 Social Manager JW — Instagram Reels')
                 gr.Markdown('**Deseja publicar o vídeo editado no Instagram?** Opcional. O download acima continua disponível.')
-                with gr.Accordion('Sim, quero publicar no Instagram', open=False):
+                gr.Markdown('### Conexão segura com Instagram')
+                gr.Markdown('O token da Meta permanece no servidor. Esta etapa apenas conecta e verifica a conta; publicação via servidor será implementada posteriormente.')
+                with gr.Row():
+                    ig_oauth_conectar = gr.Button('🔗 Conectar Instagram', variant='primary')
+                    ig_oauth_status = gr.Button('🔄 Verificar conexão')
+                    ig_oauth_desconectar = gr.Button('Desconectar')
+                ig_oauth_mensagem = gr.Markdown('Clique em **Verificar conexão** para consultar a conta autorizada.')
+                def _ig_oauth_conectar():
+                    try:
+                        url = conectar_instagram()
+                        webbrowser.open(url, new=2)
+                        return '🔗 Autorização aberta no navegador. Após concluir, clique em **Verificar conexão**.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                def _ig_oauth_status():
+                    try:
+                        dados = status_instagram()
+                        if dados.get('connected'):
+                            return f"✅ Instagram conectado: **@{dados.get('username') or 'conta autorizada'}** (ID: `{dados.get('instagram_id') or 'indisponível'}`)."
+                        return 'ℹ️ Nenhuma conta Instagram conectada a esta licença/dispositivo.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                def _ig_oauth_desconectar():
+                    try:
+                        desconectar_instagram()
+                        return '✅ Conexão removida do servidor local. Isso não revoga o acesso na Meta.'
+                    except InstagramOAuthClientError as exc:
+                        return f'❌ {exc}'
+                ig_oauth_conectar.click(_ig_oauth_conectar, outputs=ig_oauth_mensagem)
+                ig_oauth_status.click(_ig_oauth_status, outputs=ig_oauth_mensagem)
+                ig_oauth_desconectar.click(_ig_oauth_desconectar, outputs=ig_oauth_mensagem)
+                # Fluxo antigo com token manual desabilitado até a publicação migrar ao servidor.
+                with gr.Accordion('Publicação manual legada (desabilitada)', open=False, visible=False):
                     ig_id = gr.Textbox(label='ID da conta Instagram (teste)', placeholder='ID numérico da conta')
                     ig_token = gr.Textbox(label='Token da Meta (somente teste local)', type='password', placeholder='Cole seu token aqui; não será salvo em arquivo')
                     ig_caption = gr.Textbox(label='Legenda do Reel', lines=3, placeholder='Descrição e hashtags')
