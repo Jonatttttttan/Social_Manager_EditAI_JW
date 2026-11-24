@@ -282,6 +282,14 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
 
     if not ident: raise gr.Error('Analise o vídeo antes de confirmar a edição.')
 
+    # Validate music before starting video processing.
+    try:
+        from promptvideo.features.background_music import validar_volume
+        escolher_musica(trilha, arquivo_musica)
+        validar_volume(volume_musica)
+    except (ValueError, TypeError, OSError) as erro:
+        raise gr.Error(str(erro)) from erro
+
     zoom_valores = extras[:60]
 
     efeitos_valores = extras[60:]
@@ -414,11 +422,11 @@ def validar_configuracao_preset_lote(configuracoes):
 
     if not isinstance(configuracoes, dict):
 
-        raise ValueError("Preset inv?lido: configura??es ausentes.")
+        raise ValueError("Preset inválido: configurações ausentes.")
 
     if set(configuracoes) != set(CAMPOS_PRESET_LOTE):
 
-        raise ValueError("Preset incompat?vel com esta vers?o do EditAI.")
+        raise ValueError("Preset incompatível com esta versão do EditAI.")
 
     campos_booleanos = (
 
@@ -432,7 +440,7 @@ def validar_configuracao_preset_lote(configuracoes):
 
         if type(configuracoes[campo]) is not bool:
 
-            raise ValueError(f"Valor inv?lido para {campo}.")
+            raise ValueError(f"Valor inválido para {campo}.")
 
     def numero(campo, minimo, maximo):
 
@@ -440,7 +448,7 @@ def validar_configuracao_preset_lote(configuracoes):
 
         if type(valor) not in (int, float):
 
-            raise ValueError(f"Valor inv?lido para {campo}.")
+            raise ValueError(f"Valor inválido para {campo}.")
 
         if not minimo <= valor <= maximo:
 
@@ -450,7 +458,7 @@ def validar_configuracao_preset_lote(configuracoes):
 
     if configuracoes["segundos_silencio"] not in (1, 2, 3, 4, 5):
 
-        raise ValueError("Limite de sil?ncio inv?lido.")
+        raise ValueError("Limite de silêncio inválido.")
 
     numero("tamanho", 60, 160)
 
@@ -486,7 +494,7 @@ def validar_configuracao_preset_lote(configuracoes):
 
         if not isinstance(valor, str) or valor not in permitidos:
 
-            raise ValueError(f"Op??o inv?lida no preset: {campo}.")
+            raise ValueError(f"Opção inválida no preset: {campo}.")
 
     musica = configuracoes["arquivo_musica"]
 
@@ -494,13 +502,13 @@ def validar_configuracao_preset_lote(configuracoes):
 
         if not isinstance(musica, str):
 
-            raise ValueError("Caminho de m?sica inv?lido.")
+            raise ValueError("Caminho de música inválido.")
 
         if not Path(musica).is_file():
 
             raise ValueError(
 
-                "A m?sica personalizada deste preset n?o foi encontrada."
+                "A música personalizada deste preset não foi encontrada."
 
             )
 
@@ -559,40 +567,57 @@ def salvar_preset_lote_interface(nome, *valores):
         raise gr.Error(str(erro))
 
 def carregar_preset_lote_interface(nome):
-
     try:
+        configuracoes = carregar_preset(nome)
+
+        if not isinstance(configuracoes, dict):
+            raise ValueError("Preset inv\u00e1lido.")
+
+        configuracoes = dict(configuracoes)
+        musica = configuracoes.get("arquivo_musica")
+        musica_ausente = False
+
+        if isinstance(musica, str):
+            if not Path(musica).is_file():
+                configuracoes["arquivo_musica"] = None
+                musica_ausente = True
+
+        if (
+            configuracoes.get("trilha") == "Arquivo pr\u00f3prio"
+            and configuracoes.get("arquivo_musica") is None
+        ):
+            musica_ausente = True
 
         configuracoes = validar_configuracao_preset_lote(
-
-            carregar_preset(nome)
-
+            configuracoes
         )
 
         valores = [
-
             configuracoes[campo]
-
             for campo in CAMPOS_PRESET_LOTE
-
         ]
 
+        mensagem = "Preset carregado com sucesso."
+
+        if musica_ausente:
+            mensagem = (
+                "**Preset carregado com aviso.** "
+                "A m\u00fasica personalizada n\u00e3o est\u00e1 "
+                "dispon\u00edvel. Importe novamente o arquivo "
+                "musical antes de exportar."
+            )
+
         return (
-
             *valores,
-
             gr.update(visible=configuracoes["eliminar_silencios"]),
-
             gr.update(visible=configuracoes["legendas"]),
-
             gr.update(visible=configuracoes["legendas"]),
-
-            "Preset carregado com sucesso."
-
+            mensagem
         )
 
     except Exception as erro:
-
         raise gr.Error(str(erro))
+
 
 def excluir_preset_lote_interface(nome):
 
