@@ -3,6 +3,15 @@ from unittest.mock import patch, Mock
 import pytest
 from promptvideo.integrations.instagram import preparar_reel, publicar_reel, InstagramPublishError
 
+
+
+@pytest.fixture(autouse=True)
+def habilitar_instagram_em_teste(monkeypatch):
+    monkeypatch.setattr(
+        "promptvideo.integrations.instagram.INSTAGRAM_ENABLED",
+        True
+    )
+
 def test_preparar_sem_token(tmp_path):
     video = tmp_path / 'video.mp4'
     video.write_bytes(b'mp4')

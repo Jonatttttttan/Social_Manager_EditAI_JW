@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+from promptvideo.config import INSTAGRAM_ENABLED
 
 
 GRAPH_VERSION = "v24.0"
@@ -32,6 +33,7 @@ class InstagramPublishError(RuntimeError):
 def _request_json(method, url, token, **kwargs):
     """Executa requisições autenticadas à Graph API."""
 
+    _garantir_instagram_habilitado()
     try:
         response = requests.request(
             method,
@@ -142,6 +144,7 @@ def preparar_reel(video, account_id, token, caption=""):
     Retorna o ID do contêiner.
     """
 
+    _garantir_instagram_habilitado()
     video = _validate(video, account_id, token)
 
     # 1. Criar contêiner
@@ -296,6 +299,7 @@ def status_reel(container_id, token):
     IN_PROGRESS, FINISHED, ERROR, EXPIRED.
     """
 
+    _garantir_instagram_habilitado()
     if not container_id:
         raise InstagramPublishError(
             "ID do contêiner não informado."
@@ -326,6 +330,7 @@ def publicar_reel(account_id, container_id, token):
     explícita na interface do EditAI.
     """
 
+    _garantir_instagram_habilitado()
     if not container_id:
         raise InstagramPublishError(
             "Prepare o Reel antes de publicar."
@@ -373,3 +378,9 @@ def publicar_reel(account_id, container_id, token):
         )
 
     return media_id
+
+def _garantir_instagram_habilitado():
+    if not INSTAGRAM_ENABLED:
+        raise InstagramPublishError(
+            "A integra\u00e7\u00e3o com o Instagram est\u00e1 desativada nesta vers\u00e3o do EditAI."
+        )

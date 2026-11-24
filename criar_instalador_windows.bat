@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 cd /d "%~dp0"
-echo === EditAI Videos JW 0.9.8.4 - Instalador Windows ===
+echo === EditAI Videos JW 0.9.8.4 Beta 2 - Instalador Windows ===
 if not exist "dist\PromptVideoAI\PromptVideoAI.exe" (
  echo ERRO: execute primeiro build_windows.bat
  pause
@@ -18,12 +18,12 @@ if not exist "%ISCC%" (
 )
 "%ISCC%" "installer.iss"
 if errorlevel 1 (echo ERRO: compilacao do instalador falhou. & pause & exit /b 1)
-if not exist "installer_output\EditAI-Videos-JW-0.9.8.4-beta-social-manager-Setup.exe" (
+if not exist "installer_output\EditAI-Videos-JW-0.9.8.4-beta2-social-manager-Setup.exe" (
  echo ERRO: instalador nao encontrado.
  pause
  exit /b 1
 )
 echo.
-echo Instalador criado em installer_output\EditAI-Videos-JW-0.9.8.4-beta-social-manager-Setup.exe
+echo Instalador criado em installer_output\EditAI-Videos-JW-0.9.8.4-beta2-social-manager-Setup.exe
 echo TESTE em Windows limpo antes de distribuir.
 pause

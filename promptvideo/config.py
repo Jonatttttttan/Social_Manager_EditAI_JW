@@ -13,3 +13,6 @@ MAX_TRECHOS = 250
 MODELO_WHISPER = os.getenv('PROMPTVIDEO_WHISPER', 'base')
 USAR_QWEN = os.getenv('PROMPTVIDEO_QWEN', '0') == '1'
 MODELO_QWEN = 'Qwen/Qwen2.5-1.5B-Instruct'
+
+# Instagram integration is disabled in Beta 2.
+INSTAGRAM_ENABLED = False

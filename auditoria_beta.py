@@ -21,7 +21,7 @@ def auditar():
         if not existe:
             problemas.append(nome)
     iss = (ROOT / 'installer.iss').read_text(encoding='utf-8') if (ROOT / 'installer.iss').is_file() else ''
-    for marcador in ('EditAI Videos JW', '0.9.8.4-beta-social-manager', 'EditAI-Videos-JW-0.9.8.4-beta-social-manager-Setup'):
+    for marcador in ('EditAI Videos JW', '0.9.8.4-beta2-social-manager', 'EditAI-Videos-JW-0.9.8.4-beta2-social-manager-Setup'):
         if marcador not in iss:
             problemas.append('Identidade do instalador: ' + marcador)
     build = ROOT / 'dist' / 'PromptVideoAI'

@@ -5,6 +5,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from promptvideo import licensing
+from promptvideo.config import INSTAGRAM_ENABLED
 
 class InstagramOAuthClientError(RuntimeError):
     pass
@@ -29,6 +30,7 @@ def _config():
     return base, {'X-EditAI-Activation': activation, 'X-EditAI-Device': licensing.device_id()}
 
 def _call(method, path):
+    _garantir_instagram_habilitado()
     base, headers = _config()
     req = Request(base + path, headers=headers, method=method)
     try:
@@ -43,6 +45,7 @@ def _call(method, path):
     return data
 
 def conectar_instagram():
+    _garantir_instagram_habilitado()
     data = _call('POST', '/api/instagram/connect')
     url = data.get('authorization_url', '')
     if not isinstance(url, str) or not url.startswith('https://'):
@@ -50,13 +53,16 @@ def conectar_instagram():
     return url
 
 def status_instagram():
+    _garantir_instagram_habilitado()
     return _call('GET', '/api/instagram/status')
 
 def desconectar_instagram():
+    _garantir_instagram_habilitado()
     return _call('POST', '/api/instagram/disconnect')
 
 
 def _reels_request(method, path, payload=None, content_type=None, timeout=90):
+    _garantir_instagram_habilitado()
     base, headers = _config()
     if content_type:
         headers['Content-Type'] = content_type
@@ -70,6 +76,7 @@ def _reels_request(method, path, payload=None, content_type=None, timeout=90):
         raise InstagramOAuthClientError('Falha de comunicação com o servidor de Reels.') from exc
 
 def preparar_reel_servidor(video_path, caption):
+    _garantir_instagram_habilitado()
     import uuid
     import mimetypes
     path = Path(video_path)
@@ -85,10 +92,19 @@ def preparar_reel_servidor(video_path, caption):
     return _reels_request('POST', '/api/instagram/reels/prepare', body, f'multipart/form-data; boundary={boundary}', 180)
 
 def criar_container_reel(job_id):
+    _garantir_instagram_habilitado()
     return _reels_request('POST', f'/api/instagram/reels/{job_id}/create', b'', 'application/json')
 
 def consultar_reel(job_id):
+    _garantir_instagram_habilitado()
     return _reels_request('GET', f'/api/instagram/reels/{job_id}/status')
 
 def publicar_reel_servidor(job_id):
+    _garantir_instagram_habilitado()
     return _reels_request('POST', f'/api/instagram/reels/{job_id}/publish', b'{"confirm":true}', 'application/json')
+
+def _garantir_instagram_habilitado():
+    if not INSTAGRAM_ENABLED:
+        raise InstagramOAuthClientError(
+            "A integra\u00e7\u00e3o com o Instagram est\u00e1 desativada nesta vers\u00e3o do EditAI."
+        )

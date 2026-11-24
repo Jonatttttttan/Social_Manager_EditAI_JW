@@ -22,7 +22,7 @@ def validar_lote(arquivos, instrucao, estilo):
     if isinstance(instrucao, dict):
         validar_plano(instrucao)
     elif not isinstance(instrucao, str) or not instrucao.strip():
-        raise ValueError('Selecione pelo menos uma op??o de edi??o.')
+        raise ValueError('Selecione pelo menos uma opção de edição.')
     if estilo not in ('Tradicional', 'Dinâmica'):
         raise ValueError('Estilo de legenda inválido.')
     caminhos = [Path(a) for a in arquivos]
@@ -38,7 +38,6 @@ def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', cal
     validar_volume(volume_musica)
     validar_filtros(filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro)
     registros=[]
-    gerados=[]
     def emitir(indice, fracao, etapa, status='processando'):
         if status_callback: status_callback(indice-1, max(0.,min(1.,float(fracao))), etapa, status)
     for indice, caminho in enumerate(caminhos, 1):
@@ -52,12 +51,10 @@ def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', cal
             if legendas:
                 resultado,srt=legendar_video(resultado,estilo,callback=lambda p,s: emitir(indice,.75+.23*p,s),visual=visual,tamanho=tamanho,posicao=posicao)
                 registro['srt']=str(srt)
-                gerados.append(Path(srt))
             resultado=adicionar_musica(resultado,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,callback=lambda msg: emitir(indice,.99,msg))
             resultado=aplicar_filtro_video(resultado,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,callback=lambda msg: emitir(indice,.995,msg))
             registro['saida']=str(resultado)
             registro['status']='concluido'
-            gerados.append(Path(resultado))
             emitir(indice, 1.0, 'Concluído', 'concluido')
         except Exception as exc:
             registro['erro']=f'{type(exc).__name__}: {exc}'
@@ -68,8 +65,24 @@ def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', cal
     pacote=SAIDAS / f'lote_{stamp}.zip'
     relatorio={'instrucoes':instrucao,'legendas':bool(legendas),'estilo':estilo,'visual':visual,'tamanho':tamanho,'posicao':posicao,'transicao':transicao,'duracao_transicao':float(duracao_transicao),'trilha':trilha,'volume_musica':float(volume_musica),'manter_audio':bool(manter_audio),'fade_musica':bool(fade_musica),'filtro_video':filtro_video,'intensidade_filtro':float(intensidade_filtro),'brilho_filtro':float(brilho_filtro),'contraste_filtro':float(contraste_filtro),'itens':registros}
     with zipfile.ZipFile(pacote,'w',compression=zipfile.ZIP_DEFLATED) as z:
+        nomes_usados = {'relatorio.json'}
+        for registro in registros:
+            for campo in ('srt', 'saida'):
+                campo_zip = campo + '_zip'
+                registro[campo_zip] = None
+                caminho = registro.get(campo)
+                if not caminho:
+                    continue
+                arquivo = Path(caminho)
+                if not arquivo.is_file():
+                    continue
+                nome = arquivo.name
+                contador = 2
+                while nome.casefold() in nomes_usados:
+                    nome = f'{arquivo.stem}_{contador}{arquivo.suffix}'
+                    contador += 1
+                z.write(arquivo, arcname=nome)
+                nomes_usados.add(nome.casefold())
+                registro[campo_zip] = nome
         z.writestr('relatorio.json',json.dumps(relatorio,ensure_ascii=False,indent=2))
-        for arquivo in gerados:
-            if arquivo.is_file():
-                z.write(arquivo,arcname=arquivo.name)
     return str(pacote), registros

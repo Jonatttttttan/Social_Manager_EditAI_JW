@@ -12,11 +12,15 @@ class TestBatchTransitions(unittest.TestCase):
             base = Path(tmp)
             videos = [base / 'primeiro.mp4', base / 'segundo.mov']
             for video in videos: video.write_bytes(b'teste')
-            resultado = base / 'editado.mp4'
-            resultado.write_bytes(b'video')
+            resultados = [
+                base / 'video_0001_editado.mp4',
+                base / 'video_0002_editado.mp4'
+            ]
+            resultados[0].write_bytes(b'video1')
+            resultados[1].write_bytes(b'video2')
             with patch('promptvideo.core.batch.SAIDAS', base), \
                  patch('promptvideo.core.batch.preparar_video', side_effect=[('video_0001', {'cortes': []}), ('video_0002', {'cortes': []})]), \
-                 patch('promptvideo.core.batch.aplicar_proposta', return_value=str(resultado)) as aplicar:
+                 patch('promptvideo.core.batch.aplicar_proposta', side_effect=[str(p) for p in resultados]) as aplicar:
                 pacote, registros = executar_lote([str(v) for v in videos], 'remova pausas', transicao='Dissolver', duracao_transicao=0.7)
             self.assertEqual(len(registros), 2)
             self.assertTrue(all(r['status'] == 'concluido' for r in registros))
@@ -26,6 +30,20 @@ class TestBatchTransitions(unittest.TestCase):
                 self.assertEqual(call.kwargs['duracao_transicao'], 0.7)
             with zipfile.ZipFile(pacote) as arquivo:
                 relatorio = json.loads(arquivo.read('relatorio.json'))
+                nomes = arquivo.namelist()
+                self.assertEqual(len(nomes), 3)
+                self.assertEqual(len(nomes), len(set(nomes)))
+                self.assertEqual(set(nomes), {
+                    'relatorio.json',
+                    'video_0001_editado.mp4',
+                    'video_0002_editado.mp4'
+                })
+                self.assertEqual(
+                    arquivo.read(resultados[0].name), b'video1'
+                )
+                self.assertEqual(
+                    arquivo.read(resultados[1].name), b'video2'
+                )
             self.assertEqual(relatorio['transicao'], 'Dissolver')
             self.assertEqual(relatorio['duracao_transicao'], 0.7)
 

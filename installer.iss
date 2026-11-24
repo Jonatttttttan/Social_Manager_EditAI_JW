@@ -1,5 +1,5 @@
 #define MyAppName "EditAI Videos JW"
-#define MyAppVersion "0.9.8.4-beta-social-manager"
+#define MyAppVersion "0.9.8.4-beta2-social-manager"
 #define MyAppExeName "PromptVideoAI.exe"
 #define MyAppPublisher "Jonathan Willian Gonçales Alves"
 
@@ -11,7 +11,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\EditAI Videos JW
 DefaultGroupName={#MyAppName}
 OutputDir=installer_output
-OutputBaseFilename=EditAI-Videos-JW-0.9.8.4-beta-social-manager-Setup
+OutputBaseFilename=EditAI-Videos-JW-0.9.8.4-beta2-social-manager-Setup
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest

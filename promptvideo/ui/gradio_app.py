@@ -10,7 +10,7 @@ from pathlib import Path
 
 import gradio as gr
 
-from promptvideo.config import SAIDAS
+from promptvideo.config import SAIDAS, INSTAGRAM_ENABLED
 
 from promptvideo.integrations.instagram import preparar_reel, publicar_reel, status_reel, InstagramPublishError
 
@@ -274,7 +274,7 @@ def _barra(nome, fracao, etapa, estado='processando'):
 
             f'<small>{descricao}</small></section>')
 
-INSTAGRAM_UI_ENABLED = False
+INSTAGRAM_UI_ENABLED = INSTAGRAM_ENABLED
 
 def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais,*extras):
 
@@ -701,7 +701,7 @@ _blocks_style = {} if _GRADIO6 else {'css': CSS, 'theme': gr.themes.Base(primary
 
 with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_blocks_style) as app:
 
-    gr.HTML('<header id="hero"><div class="jw-eyebrow">✦ ESTÚDIO INTELIGENTE <span class="jw-version">BETA 0.9.8.4</span></div><h1>EditAI <span>Videos JW</span></h1><p>Da ideia ao vídeo pronto. Importe seus arquivos, descreva a edição e personalize o resultado em poucos passos.</p><div class="jw-hero-tags"><span>⚡ Edição automática</span><span>🎵 Música</span><span>🎨 Filtros</span><span>✨ Transições</span></div></header>')
+    gr.HTML('<header id="hero"><div class="jw-eyebrow">✦ ESTÚDIO INTELIGENTE <span class="jw-version">BETA 2 · 0.9.8.4</span></div><h1>EditAI <span>Videos JW</span></h1><p>Da ideia ao vídeo pronto. Importe seus arquivos, descreva a edição e personalize o resultado em poucos passos.</p><div class="jw-hero-tags"><span>⚡ Edição automática</span><span>🎵 Música</span><span>🎨 Filtros</span><span>✨ Transições</span></div></header>')
 
     gr.HTML('<nav id="journey" aria-label="Etapas da edição"><div><span class="jw-step">1</span><strong>Importar</strong><small>Selecione seus vídeos</small></div><i>›</i><div><span class="jw-step">2</span><strong>Personalizar</strong><small>Descreva e ajuste</small></div><i>›</i><div><span class="jw-step">3</span><strong>Exportar</strong><small>Revise e baixe</small></div></nav>')
 
@@ -1121,11 +1121,14 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                         return f'❌ {exc}'
 
-                ig_oauth_conectar.click(_ig_oauth_conectar, outputs=ig_oauth_mensagem)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_oauth_conectar.click(_ig_oauth_conectar, outputs=ig_oauth_mensagem)
 
-                ig_oauth_status.click(_ig_oauth_status, outputs=ig_oauth_mensagem)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_oauth_status.click(_ig_oauth_status, outputs=ig_oauth_mensagem)
 
-                ig_oauth_desconectar.click(_ig_oauth_desconectar, outputs=ig_oauth_mensagem)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_oauth_desconectar.click(_ig_oauth_desconectar, outputs=ig_oauth_mensagem)
 
                 gr.Markdown('### Publicar Reel — teste local')
 
@@ -1205,13 +1208,17 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                         return f'❌ {exc} Não clique novamente sem verificar o resultado na Meta.', job, False, gr.update(value=False), gr.update(interactive=False)
 
-                ig_preparar_novo.click(_ig_nova_preparacao, [download, ig_caption_nova], [ig_job_novo, ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_preparar_novo.click(_ig_nova_preparacao, [download, ig_caption_nova], [ig_job_novo, ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
 
-                ig_verificar_novo.click(_ig_nova_verificacao, [ig_job_novo], [ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_verificar_novo.click(_ig_nova_verificacao, [ig_job_novo], [ig_pronto_novo, ig_resultado_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
 
-                ig_confirmar_novo.change(_ig_nova_confirmacao, [ig_confirmar_novo, ig_pronto_novo], [ig_publicar_novo], queue=False)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_confirmar_novo.change(_ig_nova_confirmacao, [ig_confirmar_novo, ig_pronto_novo], [ig_publicar_novo], queue=False)
 
-                ig_publicar_novo.click(_ig_nova_publicacao, [ig_job_novo, ig_confirmar_novo, ig_pronto_novo], [ig_resultado_novo, ig_job_novo, ig_pronto_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
+                if INSTAGRAM_UI_ENABLED:
+                    ig_publicar_novo.click(_ig_nova_publicacao, [ig_job_novo, ig_confirmar_novo, ig_pronto_novo], [ig_resultado_novo, ig_job_novo, ig_pronto_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
 
             aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
 
