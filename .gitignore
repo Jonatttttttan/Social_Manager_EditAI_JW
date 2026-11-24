@@ -1,4 +1,4 @@
-﻿# Executáveis do FFmpeg
+# Executáveis do FFmpeg
 bin/ffmpeg.exe
 bin/ffprobe.exe
 
@@ -30,3 +30,36 @@ __pycache__/
 # Arquivos temporários
 *.log
 *.tmp
+
+# PyInstaller
+build/
+dist/
+*.exe
+*.msi
+# Backups de desenvolvimento
+backup_*/
+*.backup
+*.backup_*
+*.bak
+# Modelos e caches de IA
+.cache/
+huggingface/
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+# Bancos de dados locais
+*.db
+*.sqlite
+*.sqlite3
+# Dados locais do aplicativo
+presets.json
+license.json
+licenses.json
+activation.json
+# Ferramentas de desenvolvimento
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/

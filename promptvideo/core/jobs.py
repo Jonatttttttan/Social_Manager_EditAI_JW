@@ -77,5 +77,5 @@ def aplicar_proposta(identificador,cortes_json,callback=None,transicao='Nenhuma'
     manuais=interpretar_cortes_manuais(cortes_manuais,duracao)
     cortes=combinar_cortes(cortes,manuais)
     saida=SAIDAS/f'{identificador}_editado.mp4'
-    final=renderizar_edicao(registro['entrada'],saida,cortes,proposta['plano']['ruido'],callback=callback,transicao=transicao,duracao_transicao=duracao_transicao)
+    final=renderizar_edicao(registro['entrada'],saida,cortes,proposta['plano']['ruido'],callback=callback,transicao=transicao,duracao_transicao=duracao_transicao,melhorar_audio_habilitado=proposta['plano'].get('melhorar_audio', True))
     return str(final)

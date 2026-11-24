@@ -619,6 +619,7 @@ def renderizar_edicao(
     callback=None,
     transicao="Nenhuma",
     duracao_transicao=0.7,
+    melhorar_audio_habilitado=True,
 ):
     """
     Renderiza o vídeo editado.
@@ -985,7 +986,7 @@ def renderizar_edicao(
                     "O vídeo intermediário está vazio."
                 )
 
-            if possui_audio:
+            if possui_audio and melhorar_audio_habilitado:
                 aprimorado = (
                     tmp / "final_audio_melhorado.mp4"
                 )

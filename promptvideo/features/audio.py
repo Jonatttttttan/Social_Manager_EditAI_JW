@@ -84,7 +84,7 @@ _lock_whisper = threading.Lock()
 def transcrever(caminho, modelo=None):
     global _whisper, _whisper_nome
 
-    from faster_whisper import WhisperModel
+    from promptvideo.core.whisper_manager import carregar_modelo_whisper
 
     with _lock_whisper:
         if _whisper is None or _whisper_nome != (modelo or MODELO_WHISPER):
@@ -92,13 +92,7 @@ def transcrever(caminho, modelo=None):
 
             # CPU int8: menor consumo de memória;
             # não exige GPU.
-            _whisper = WhisperModel(
-                nome,
-                device='cpu',
-                compute_type='int8',
-                cpu_threads=2,
-                num_workers=1
-            )
+            _whisper = carregar_modelo_whisper(nome)
 
             _whisper_nome = nome
 

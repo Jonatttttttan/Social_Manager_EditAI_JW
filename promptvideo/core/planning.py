@@ -1,6 +1,6 @@
 import re
 from promptvideo.core.media import analisar_video, normalizar
-from promptvideo.ai.prompts import interpretar_prompt
+from promptvideo.ai.prompts import interpretar_prompt, validar_plano
 from promptvideo.features.audio import detectar_silencios, transcrever
 from promptvideo.core.duration import planejar_duracao
 from promptvideo.core.media import juntar_intervalos
@@ -27,7 +27,7 @@ def encontrar_frases(segmentos, frases):
 
 def montar_proposta(video,prompt):
     info=analisar_video(video)
-    plano=interpretar_prompt(prompt)
+    plano = validar_plano(prompt) if isinstance(prompt, dict) else interpretar_prompt(prompt)
     if not info['possui_audio']:
         raise ValueError('Vídeo sem áudio: operações de silêncio, transcrição e redução de ruído não se aplicam.')
     cortes=[]; transcricao=[]; nao_encontradas=[]

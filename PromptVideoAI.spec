@@ -1,4 +1,4 @@
-
+﻿
 # -*- mode: python ; coding: utf-8 -*-
 """Build onedir Windows; inclui dados/metadata de dependencias que leem arquivos em runtime."""
 
@@ -48,6 +48,7 @@ for name in ('ffmpeg', 'ffprobe'):
 
 # Inclui os arquivos de musica do editor.
 datas.append(('promptvideo/music', 'promptvideo/music'))
+datas.append(('promptvideo/effects', 'promptvideo/effects'))
 
 # Analise das dependencias.
 a = Analysis(
@@ -91,3 +92,4 @@ coll = COLLECT(
     upx=False,
     name='PromptVideoAI',
 )
+

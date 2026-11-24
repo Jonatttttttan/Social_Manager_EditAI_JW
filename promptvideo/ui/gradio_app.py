@@ -9,6 +9,7 @@ from promptvideo.integrations.instagram import preparar_reel, publicar_reel, sta
 from promptvideo.licensing import ensure_valid, LicenseError
 from promptvideo.core.jobs import preparar_video, aplicar_proposta
 from promptvideo.core.batch import executar_lote
+from promptvideo.core.presets import listar_presets, salvar_preset, carregar_preset, excluir_preset
 from promptvideo.features.subtitles import legendar_video, legendar_manual, ESTILOS_VISUAIS
 from promptvideo.features.background_music import TRACKS, escolher_musica, adicionar_musica
 from promptvideo.features.video_filters import FILTROS, aplicar_filtro_video
@@ -19,7 +20,11 @@ def interface_analisar(video,prompt):
     ensure_valid()
     try:
         if not video:raise ValueError('Envie um vídeo MP4 ou MOV')
-        if not prompt or not prompt.strip():raise ValueError('Digite um pedido de edição')
+        if isinstance(prompt, dict):
+            from promptvideo.ai.prompts import validar_plano
+            prompt = validar_plano(prompt)
+        elif not isinstance(prompt, str) or not prompt.strip():
+            raise ValueError('Selecione pelo menos uma opcao de edicao.')
         identificador,p=preparar_video(video,prompt)
         transcricao='\n'.join(f"[{s['inicio']:.2f}–{s['fim']:.2f}] {s['texto']}" for s in p['transcricao'])
         if not transcricao:transcricao='Transcrição não solicitada. Peça para remover uma frase ou revisar falas.'
@@ -29,7 +34,8 @@ def interface_analisar(video,prompt):
         if p['plano']['ruido']!='nenhum': acoes.append('Reduzir ruído de fundo')
         if p['plano']['frases']: acoes.append('Remover frases: '+', '.join(p['plano']['frases']))
         if p['plano']['revisar_falas']: acoes.append('Revisar falas na transcrição')
-        acoes.append('Melhoria automática de áudio na exportação')
+        if p['plano'].get('melhorar_audio', False):
+            acoes.append('Melhoria automática de áudio na exportação')
         resumo+='\n\n**Interpretação do pedido:**\n'+''.join('\n- '+a for a in acoes)
         if p.get('duracao_info'):
             d=p['duracao_info']
@@ -415,8 +421,27 @@ def limpar_analise():
     # Qualquer mudança de entrada/instrução invalida a proposta anterior.
     return '', gr.update(value='', visible=False), gr.update(value='[]', visible=False), gr.update(value='', visible=False), gr.update(visible=False)
 
-def analisar_guiado(video, instrucao):
-    ident, resumo, cortes, transcricao = interface_analisar(video, instrucao)
+def criar_plano_checkboxes(reduzir_ruido, eliminar_silencios, segundos, melhorar_audio):
+    """Converte op??es da interface em um plano determin?stico."""
+    if not any((reduzir_ruido, eliminar_silencios, melhorar_audio)):
+        raise ValueError("Selecione pelo menos uma op??o de edi??o.")
+
+    if isinstance(segundos, bool) or segundos not in (1, 2, 3, 4, 5):
+        raise ValueError("Selecione um limite de sil?ncio entre 1 e 5 segundos.")
+
+    return {
+        "silencios": bool(eliminar_silencios),
+        "minimo": float(segundos),
+        "ruido": "medio" if reduzir_ruido else "nenhum",
+        "melhorar_audio": bool(melhorar_audio),
+    }
+
+
+def analisar_guiado(video, reduzir_ruido, eliminar_silencios, segundos, melhorar_audio):
+    plano = criar_plano_checkboxes(
+        reduzir_ruido, eliminar_silencios, segundos, melhorar_audio
+    )
+    ident, resumo, cortes, transcricao = interface_analisar(video, plano)
     return ident, gr.update(value=resumo, visible=True), gr.update(value=cortes, visible=True), gr.update(value=transcricao, visible=bool(transcricao)), gr.update(visible=True)
 
 def concluir_guiado(ident, cortes, leg, estilo):
@@ -454,6 +479,8 @@ def _barra(nome, fracao, etapa, estado='processando'):
             f'<div style="width:{pct}%;background:{cor};height:100%;border-radius:9px"></div></div>'
             f'<small>{descricao}</small></section>')
 
+INSTAGRAM_UI_ENABLED = False
+
 def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais,*extras):
     ensure_valid()
     if not ident: raise gr.Error('Analise o vídeo antes de confirmar a edição.')
@@ -485,12 +512,174 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
             yield _barra('Seu vídeo',pct,etapa),gr.update(),gr.update(),gr.update(),gr.update(),gr.update(visible=False),gr.update(visible=False)
         elif tipo=='resultado':
             caminho,srt=dados
-            yield _barra('Seu vídeo',1,'Concluído','concluido'),gr.update(value=caminho,visible=True),gr.update(value=caminho,visible=True),gr.update(value=srt,visible=bool(srt)),gr.update(value='✅ Vídeo pronto! Use a área de download destacada abaixo.',visible=True),gr.update(visible=True),gr.update(visible=True)
+            yield _barra('Seu vídeo',1,'Concluído','concluido'),gr.update(value=caminho,visible=True),gr.update(value=caminho,visible=True),gr.update(value=srt,visible=bool(srt)),gr.update(value='✅ Vídeo pronto! Use a área de download destacada abaixo.',visible=True),gr.update(visible=True),gr.update(visible=INSTAGRAM_UI_ENABLED)
         elif tipo=='erro':
             yield _barra('Seu vídeo',1,'Falha na edição','erro'),gr.update(),gr.update(),gr.update(),gr.update(value='❌ '+html.escape(str(dados)),visible=True),gr.update(visible=False),gr.update(visible=False)
 
-def lote_com_progresso(arquivos,instrucao,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro):
+
+CAMPOS_PRESET_LOTE = (
+    "reduzir_ruido",
+    "eliminar_silencios",
+    "segundos_silencio",
+    "melhorar_audio",
+    "legendas",
+    "estilo",
+    "visual",
+    "tamanho",
+    "posicao",
+    "transicao",
+    "duracao_transicao",
+    "trilha",
+    "arquivo_musica",
+    "volume_musica",
+    "manter_audio",
+    "fade_musica",
+    "filtro_video",
+    "intensidade_filtro",
+    "brilho_filtro",
+    "contraste_filtro",
+)
+
+
+def criar_configuracao_preset_lote(*valores):
+    """Converte os controles da edi??o em lote em dados persistentes."""
+    if len(valores) != len(CAMPOS_PRESET_LOTE):
+        raise ValueError("Quantidade incorreta de configura??es do preset.")
+
+    configuracoes = dict(zip(CAMPOS_PRESET_LOTE, valores))
+
+    caminho = configuracoes.get("arquivo_musica")
+    configuracoes["arquivo_musica"] = (
+        str(caminho) if caminho else None
+    )
+
+    return configuracoes
+
+
+
+def validar_configuracao_preset_lote(configuracoes):
+    """Valida os dados antes de restaurar um preset."""
+    if not isinstance(configuracoes, dict):
+        raise ValueError("Preset inv?lido: configura??es ausentes.")
+
+    if set(configuracoes) != set(CAMPOS_PRESET_LOTE):
+        raise ValueError("Preset incompat?vel com esta vers?o do EditAI.")
+
+    campos_booleanos = (
+        "reduzir_ruido", "eliminar_silencios", "melhorar_audio",
+        "legendas", "manter_audio", "fade_musica"
+    )
+
+    for campo in campos_booleanos:
+        if type(configuracoes[campo]) is not bool:
+            raise ValueError(f"Valor inv?lido para {campo}.")
+
+    def numero(campo, minimo, maximo):
+        valor = configuracoes[campo]
+        if type(valor) not in (int, float):
+            raise ValueError(f"Valor inv?lido para {campo}.")
+        if not minimo <= valor <= maximo:
+            raise ValueError(f"Valor fora dos limites: {campo}.")
+
+    numero("segundos_silencio", 1, 5)
+    if configuracoes["segundos_silencio"] not in (1, 2, 3, 4, 5):
+        raise ValueError("Limite de sil?ncio inv?lido.")
+
+    numero("tamanho", 60, 160)
+    numero("duracao_transicao", 0.2, 2.0)
+    numero("volume_musica", 0, 100)
+    numero("intensidade_filtro", 0, 100)
+    numero("brilho_filtro", -100, 100)
+    numero("contraste_filtro", -100, 100)
+
+    escolhas = {
+        "estilo": ("Tradicional", "Din\u00e2mica"),
+        "visual": ESTILOS_VISUAIS,
+        "posicao": ("Inferior", "Centro", "Superior"),
+        "transicao": ("Nenhuma", "Dissolver", "Fade para preto", "Deslizar"),
+        "trilha": TRACKS,
+        "filtro_video": FILTROS,
+    }
+
+    for campo, permitidos in escolhas.items():
+        valor = configuracoes[campo]
+        if not isinstance(valor, str) or valor not in permitidos:
+            raise ValueError(f"Op??o inv?lida no preset: {campo}.")
+
+    musica = configuracoes["arquivo_musica"]
+    if musica is not None:
+        if not isinstance(musica, str):
+            raise ValueError("Caminho de m?sica inv?lido.")
+        if not Path(musica).is_file():
+            raise ValueError(
+                "A m?sica personalizada deste preset n?o foi encontrada."
+            )
+
+    return dict(configuracoes)
+
+
+
+
+def atualizar_lista_presets_lote():
+    """Consulta os presets atuais no arquivo JSON."""
+    try:
+        nomes = list(listar_presets())
+        return gr.update(choices=nomes, value=None)
+    except Exception as erro:
+        raise gr.Error(str(erro))
+
+
+def salvar_preset_lote_interface(nome, *valores):
+    try:
+        configuracoes = criar_configuracao_preset_lote(*valores)
+        configuracoes = validar_configuracao_preset_lote(configuracoes)
+        nome = salvar_preset(nome, configuracoes)
+        return (
+            gr.update(choices=list(listar_presets()), value=nome),
+            f"Preset '{nome}' salvo com sucesso."
+        )
+    except Exception as erro:
+        raise gr.Error(str(erro))
+
+
+def carregar_preset_lote_interface(nome):
+    try:
+        configuracoes = validar_configuracao_preset_lote(
+            carregar_preset(nome)
+        )
+
+        valores = [
+            configuracoes[campo]
+            for campo in CAMPOS_PRESET_LOTE
+        ]
+
+        return (
+            *valores,
+            gr.update(visible=configuracoes["eliminar_silencios"]),
+            gr.update(visible=configuracoes["legendas"]),
+            gr.update(visible=configuracoes["legendas"]),
+            "Preset carregado com sucesso."
+        )
+    except Exception as erro:
+        raise gr.Error(str(erro))
+
+
+def excluir_preset_lote_interface(nome):
+    try:
+        excluir_preset(nome)
+        return (
+            gr.update(choices=list(listar_presets()), value=None),
+            "Preset excluido com sucesso."
+        )
+    except Exception as erro:
+        raise gr.Error(str(erro))
+
+
+def lote_com_progresso(arquivos,instrucao,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,eliminar_silencios,segundos_silencio,melhorar_audio):
     ensure_valid()
+    instrucao = criar_plano_checkboxes(
+        instrucao, eliminar_silencios, segundos_silencio, melhorar_audio
+    )
     nomes=[Path(a).name for a in (arquivos or [])]
     if not nomes: raise gr.Error('Selecione ao menos um vídeo MP4 ou MOV.')
     estados=[(0.,'Aguardando','aguardando') for _ in nomes]
@@ -530,9 +719,20 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     video=gr.File(label='Seu vídeo (MP4 ou MOV)',file_types=['.mp4','.mov'],type='filepath')
                 with gr.Column(scale=5):
                     gr.Markdown('### ② Descreva a edição',elem_classes=['jw-section-heading'])
-                    prompt=gr.Textbox(label='Seu pedido de edição',lines=4,placeholder='Ex.: Tire as pausas longas, melhore minha voz e deixe o vídeo com aproximadamente 5 minutos.')
-                    exemplo=gr.Dropdown(choices=list(EXEMPLOS),label='Ou escolha uma sugestão pronta',value=None,interactive=True)
-                    exemplo.change(preencher_exemplo,exemplo,prompt)
+                    reduzir_ruido=gr.Checkbox(label='Reduzir ru?do de fundo',value=False)
+                    eliminar_silencios=gr.Checkbox(label='Eliminar pausas de sil?ncio',value=False)
+                    segundos_silencio=gr.Radio(
+                        choices=[1,2,3,4,5],
+                        value=2,
+                        label='Eliminar pausas maiores que (segundos)',
+                        visible=False
+                    )
+                    melhorar_audio_opcao=gr.Checkbox(label='Melhorar ?udio',value=True)
+                    eliminar_silencios.change(
+                        lambda ativo: gr.update(visible=ativo),
+                        inputs=eliminar_silencios,
+                        outputs=segundos_silencio
+                    )
                     gr.HTML('<section class="jw-feature-intro"><h3>▣ Legendas do vídeo</h3><p>Escolha como as legendas serão criadas: sem legendas, geradas automaticamente a partir das falas ou escritas por você com horários personalizados.</p></section>')
                     modo_legendas=gr.Radio(choices=['Sem legendas','Automáticas','Manuais'],value='Sem legendas',label='Tipo de legendas')
                     with gr.Column(visible=False) as painel_manuais:
@@ -686,7 +886,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             pronto_individual=gr.HTML('<section class="jw-ready" role="status"><h3>✓ Seu vídeo está pronto para baixar!</h3><p>⬇ Na caixa amarela logo abaixo, clique no nome do arquivo MP4 ou no ícone de download. O arquivo de legendas também estará disponível quando solicitado.</p></section>',visible=False)
             download=gr.File(label='⬇ DOWNLOAD — Clique para baixar o vídeo MP4',visible=False,elem_id='download-video')
             arquivo_srt=gr.File(label='Baixar arquivo de legendas SRT',visible=False)
-            analisar.click(analisar_guiado,[video,prompt],[identificador,resumo,cortes,transcricao,aplicar],concurrency_limit=1)
+            analisar.click(analisar_guiado,[video,reduzir_ruido,eliminar_silencios,segundos_silencio,melhorar_audio_opcao],[identificador,resumo,cortes,transcricao,aplicar],concurrency_limit=1)
             with gr.Group(visible=False) as instagram_panel:
                 gr.Markdown('### 📱 Social Manager JW — Instagram Reels')
                 gr.Markdown('**Deseja publicar o vídeo editado no Instagram?** Opcional. O download acima continua disponível.')
@@ -767,16 +967,45 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
             aplicar.click(lambda: (None, False, '', gr.update(value=False), gr.update(interactive=False)), outputs=[ig_job_novo,ig_pronto_novo,ig_resultado_novo,ig_confirmar_novo,ig_publicar_novo], queue=False)
 
-            for entrada in (video,prompt):
+            for entrada in (video,reduzir_ruido,eliminar_silencios,segundos_silencio,melhorar_audio_opcao):
                 entrada.change(limpar_analise,outputs=[identificador,resumo,cortes,transcricao,aplicar])
         with gr.Tab('▦ Vários vídeos'):
             gr.Markdown('### ① Importe seus vídeos',elem_classes=['jw-section-heading'])
             gr.Markdown('Selecione de 1 a 20 arquivos MP4 ou MOV. Você pode misturar os formatos no mesmo lote.',elem_classes=['helper'])
+            with gr.Accordion("Presets de edicao em lote", open=False):
+                gr.Markdown("Salve e reutilize suas configuracoes de edicao.")
+                preset_nome_lote = gr.Textbox(
+                    label="Nome do preset",
+                    placeholder="Ex.: Shorts para YouTube",
+                    max_lines=1,
+                )
+                preset_selecionado_lote = gr.Dropdown(
+                    label="Presets salvos",
+                    choices=list(listar_presets()),
+                    value=None,
+                    interactive=True,
+                )
+                with gr.Row():
+                    salvar_preset_btn_lote = gr.Button("Salvar preset")
+                    carregar_preset_btn_lote = gr.Button("Carregar preset")
+                    excluir_preset_btn_lote = gr.Button("Excluir preset")
+                preset_status_lote = gr.Markdown("")
             arquivos_lote=gr.File(label='Selecionar vídeos MP4 ou MOV',file_count='multiple',file_types=['.mp4','.mov'],type='filepath')
             gr.Markdown('### ② Descreva a edição para todos',elem_classes=['jw-section-heading'])
-            prompt_lote=gr.Textbox(label='O que fazer em cada vídeo?',lines=3,placeholder='Ex.: Remova silêncios maiores que 2 segundos e melhore o áudio de todos os vídeos.')
-            exemplo_lote=gr.Dropdown(choices=list(EXEMPLOS),label='Ou escolha uma sugestão pronta',value=None)
-            exemplo_lote.change(preencher_exemplo,exemplo_lote,prompt_lote)
+            reduzir_ruido_lote=gr.Checkbox(label='Reduzir ru?do de fundo',value=False)
+            eliminar_silencios_lote=gr.Checkbox(label='Eliminar pausas de sil?ncio',value=False)
+            segundos_silencio_lote=gr.Radio(
+                choices=[1,2,3,4,5],
+                value=2,
+                label='Eliminar pausas maiores que (segundos)',
+                visible=False
+            )
+            melhorar_audio_lote=gr.Checkbox(label='Melhorar ?udio',value=True)
+            eliminar_silencios_lote.change(
+                lambda ativo: gr.update(visible=ativo),
+                inputs=eliminar_silencios_lote,
+                outputs=segundos_silencio_lote
+            )
             legendas_lote=gr.Checkbox(label='Adicionar legendas a todos os vídeos',value=False)
             estilo_lote=gr.Radio(choices=['Tradicional','Dinâmica'],value='Tradicional',label='Estilo das legendas',visible=False)
             with gr.Column(visible=False) as aparencia_lote:
@@ -816,7 +1045,60 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             status_lote=gr.Markdown(visible=False)
             pronto_lote=gr.HTML('<section class="jw-ready" role="status"><h3>✓ Seus vídeos estão prontos para baixar!</h3><p>⬇ Na caixa amarela abaixo, clique no arquivo ZIP ou no ícone de download para salvar todos os vídeos editados. Confira o relatório para identificar eventuais falhas individuais.</p></section>',visible=False)
             download_lote=gr.File(label='⬇ DOWNLOAD — Clique para baixar o pacote ZIP',visible=False,elem_id='download-batch')
-            iniciar_lote.click(lote_com_progresso,[arquivos_lote,prompt_lote,legendas_lote,estilo_lote,visual_lote,tamanho_lote,posicao_lote,transicao_lote,duracao_transicao_lote,trilha_lote,arquivo_musica_lote,volume_musica_lote,manter_audio_lote,fade_musica_lote,filtro_video_lote,intensidade_filtro_lote,brilho_filtro_lote,contraste_filtro_lote],[progresso_lote,download_lote,status_lote,pronto_lote],concurrency_limit=1)
+            controles_preset_lote = [
+                reduzir_ruido_lote,
+                eliminar_silencios_lote,
+                segundos_silencio_lote,
+                melhorar_audio_lote,
+                legendas_lote,
+                estilo_lote,
+                visual_lote,
+                tamanho_lote,
+                posicao_lote,
+                transicao_lote,
+                duracao_transicao_lote,
+                trilha_lote,
+                arquivo_musica_lote,
+                volume_musica_lote,
+                manter_audio_lote,
+                fade_musica_lote,
+                filtro_video_lote,
+                intensidade_filtro_lote,
+                brilho_filtro_lote,
+                contraste_filtro_lote
+            ]
+
+            salvar_preset_btn_lote.click(
+                fn=salvar_preset_lote_interface,
+                inputs=[preset_nome_lote] + controles_preset_lote,
+                outputs=[preset_selecionado_lote, preset_status_lote],
+            )
+
+            carregar_preset_btn_lote.click(
+                fn=carregar_preset_lote_interface,
+                inputs=[preset_selecionado_lote],
+                outputs=controles_preset_lote + [
+                    segundos_silencio_lote,
+                    estilo_lote,
+                    aparencia_lote,
+                    preset_status_lote,
+                ],
+            )
+
+            excluir_preset_btn_lote.click(
+                fn=excluir_preset_lote_interface,
+                inputs=[preset_selecionado_lote],
+                outputs=[preset_selecionado_lote, preset_status_lote],
+            )
+
+
+            app.load(
+                fn=atualizar_lista_presets_lote,
+                inputs=None,
+                outputs=[preset_selecionado_lote],
+            )
+
+            iniciar_lote.click(lote_com_progresso,[arquivos_lote,reduzir_ruido_lote,legendas_lote,estilo_lote,visual_lote,tamanho_lote,posicao_lote,transicao_lote,duracao_transicao_lote,trilha_lote,arquivo_musica_lote,volume_musica_lote,manter_audio_lote,fade_musica_lote,filtro_video_lote,intensidade_filtro_lote,brilho_filtro_lote,contraste_filtro_lote,eliminar_silencios_lote,segundos_silencio_lote,melhorar_audio_lote],[progresso_lote,download_lote,status_lote,pronto_lote],concurrency_limit=1)
     gr.HTML('<footer id="jw-footer"><strong>EditAI Videos JW</strong><div>Desenvolvido por Jonathan Willian Gonçales Alves</div><small>Versão 0.9.8 Beta • Edição inteligente de vídeos • Processamento local</small></footer>')
 app.queue(default_concurrency_limit=1,max_size=10)
 

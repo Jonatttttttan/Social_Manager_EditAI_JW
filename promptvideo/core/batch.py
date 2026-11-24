@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from promptvideo.config import SAIDAS
 from promptvideo.core.jobs import preparar_video, aplicar_proposta
+from promptvideo.ai.prompts import validar_plano
 from promptvideo.core.media import FORMATOS_ENTRADA
 from promptvideo.core.transitions import validar_transicao
 from promptvideo.features.background_music import adicionar_musica, escolher_musica, validar_volume
@@ -18,8 +19,10 @@ def validar_lote(arquivos, instrucao, estilo):
         raise ValueError('Selecione ao menos um vídeo MP4 ou MOV.')
     if len(arquivos) > MAX_VIDEOS:
         raise ValueError(f'O limite por lote é {MAX_VIDEOS} vídeos.')
-    if not instrucao or not instrucao.strip():
-        raise ValueError('Digite as instruções de edição.')
+    if isinstance(instrucao, dict):
+        validar_plano(instrucao)
+    elif not isinstance(instrucao, str) or not instrucao.strip():
+        raise ValueError('Selecione pelo menos uma op??o de edi??o.')
     if estilo not in ('Tradicional', 'Dinâmica'):
         raise ValueError('Estilo de legenda inválido.')
     caminhos = [Path(a) for a in arquivos]
