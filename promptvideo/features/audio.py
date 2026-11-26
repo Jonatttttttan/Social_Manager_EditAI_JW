@@ -1,4 +1,5 @@
 
+from promptvideo.core.performance import medir_etapa
 import re
 import os
 import subprocess
@@ -31,13 +32,14 @@ def detectar_silencios(caminho, duracao, limite_db=-35., minimo=1., margem=0.15)
     # Impede que o FFmpeg abra janelas de terminal no Windows.
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
-    p = subprocess.run(
-        cmd,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        text=True,
-        creationflags=flags
-    )
+    with medir_etapa('ffmpeg.audio'):
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            creationflags=flags
+        )
 
     if p.returncode:
         raise RuntimeError(
@@ -81,49 +83,87 @@ _whisper_nome = None
 _lock_whisper = threading.Lock()
 
 
+
+def _liberar_whisper_se_necessario():
+    """Executar somente com o lock do Whisper adquirido."""
+
+    global _whisper, _whisper_nome
+
+    if _whisper is None:
+        return False
+
+    from promptvideo.core.memory_manager import (
+        deve_liberar_whisper
+    )
+
+    liberar, motivo = deve_liberar_whisper()
+
+    if not liberar:
+        return False
+
+    import gc
+    import logging
+
+    with medir_etapa("whisper.liberar_cache"):
+        _whisper = None
+        _whisper_nome = None
+        gc.collect()
+
+    logging.getLogger(__name__).info(
+        "Cache Whisper liberado: %s",
+        motivo
+    )
+
+    return True
+
+
 def transcrever(caminho, modelo=None):
     global _whisper, _whisper_nome
 
     from promptvideo.core.whisper_manager import carregar_modelo_whisper
 
     with _lock_whisper:
-        if _whisper is None or _whisper_nome != (modelo or MODELO_WHISPER):
-            nome = modelo or MODELO_WHISPER
+        try:
+            if _whisper is None or _whisper_nome != (modelo or MODELO_WHISPER):
+                nome = modelo or MODELO_WHISPER
 
-            # CPU int8: menor consumo de memória;
-            # não exige GPU.
-            _whisper = carregar_modelo_whisper(nome)
+                # CPU int8: menor consumo de memória;
+                # não exige GPU.
+                _whisper = carregar_modelo_whisper(nome)
 
-            _whisper_nome = nome
+                _whisper_nome = nome
 
-        segmentos, info = _whisper.transcribe(
-            str(caminho),
-            language='pt',
-            beam_size=3,
-            vad_filter=True,
-            word_timestamps=True
-        )
+            segmentos, info = _whisper.transcribe(
+                str(caminho),
+                language='pt',
+                beam_size=3,
+                vad_filter=True,
+                word_timestamps=True
+            )
 
-        saida = []
+            saida = []
 
-        for s in segmentos:
-            palavras = [
-                {
-                    'inicio': round(w.start, 3),
-                    'fim': round(w.end, 3),
-                    'texto': w.word
-                }
-                for w in (s.words or [])
-            ]
+            for s in segmentos:
+                palavras = [
+                    {
+                        'inicio': round(w.start, 3),
+                        'fim': round(w.end, 3),
+                        'texto': w.word
+                    }
+                    for w in (s.words or [])
+                ]
 
-            saida.append({
-                'inicio': round(s.start, 3),
-                'fim': round(s.end, 3),
-                'texto': s.text.strip(),
-                'palavras': palavras
-            })
+                saida.append({
+                    'inicio': round(s.start, 3),
+                    'fim': round(s.end, 3),
+                    'texto': s.text.strip(),
+                    'palavras': palavras
+                })
 
-        return saida
+            return saida
+
+        finally:
+            _liberar_whisper_se_necessario()
 
 
 def filtro_ruido(nivel):

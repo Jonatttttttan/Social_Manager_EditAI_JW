@@ -1,6 +1,7 @@
 """Pipeline de exportacao com revisao de legendas."""
 
 from pathlib import Path
+from promptvideo.core.performance import medir_etapa
 
 from promptvideo.features.audio import transcrever
 
@@ -77,7 +78,8 @@ def exportar_com_revisao(
 
     progresso(0.05, "Transcrevendo audio original")
 
-    segmentos = transcrever(caminho)
+    with medir_etapa('legendas.transcricao'):
+        segmentos = transcrever(caminho)
 
     if not segmentos or not _chunks(segmentos):
         raise ValueError(
@@ -86,57 +88,62 @@ def exportar_com_revisao(
 
     progresso(0.45, "Preparando musica de fundo")
 
-    caminho = adicionar_musica(
-        caminho,
-        trilha,
-        arquivo_musica,
-        volume_musica,
-        manter_audio,
-        fade_musica,
-        callback=lambda msg: progresso(0.50, msg)
-    )
+    with medir_etapa('legendas.musica'):
+        caminho = adicionar_musica(
+            caminho,
+            trilha,
+            arquivo_musica,
+            volume_musica,
+            manter_audio,
+            fade_musica,
+            callback=lambda msg: progresso(0.50, msg)
+        )
 
     if eventos_efeitos:
         progresso(0.55, "Preparando efeitos sonoros")
 
-        caminho = aplicar_efeitos(
-            caminho,
-            eventos_efeitos,
-            callback=lambda msg: progresso(0.58, msg)
-        )
+        with medir_etapa('legendas.efeitos_sonoros'):
+            caminho = aplicar_efeitos(
+                caminho,
+                eventos_efeitos,
+                callback=lambda msg: progresso(0.58, msg)
+            )
 
     progresso(0.60, "Preparando filtro visual")
 
-    caminho = aplicar_filtro_video(
-        caminho,
-        filtro_video,
-        intensidade_filtro,
-        brilho_filtro,
-        contraste_filtro,
-        callback=lambda msg: progresso(0.65, msg)
-    )
+    with medir_etapa('legendas.filtro_visual'):
+        caminho = aplicar_filtro_video(
+            caminho,
+            filtro_video,
+            intensidade_filtro,
+            brilho_filtro,
+            contraste_filtro,
+            callback=lambda msg: progresso(0.65, msg)
+        )
 
     progresso(0.70, "Preservando video base")
 
-    identificador = criar_sessao_revisao(
-        caminho,
-        segmentos,
-        estilo,
-        visual,
-        tamanho,
-        posicao,
-        transicoes=transicoes
-    )
+    with medir_etapa('legendas.preservar_base'):
+        identificador = criar_sessao_revisao(
+            caminho,
+            segmentos,
+            estilo,
+            visual,
+            tamanho,
+            posicao,
+            transicoes=transicoes
+        )
 
     progresso(0.80, "Gerando video legendado")
 
-    mp4, srt = exportar_revisao(
-        identificador,
-        callback=lambda pct, msg: progresso(
-            0.80 + 0.20 * pct,
-            msg
+    with medir_etapa('legendas.renderizacao'):
+        mp4, srt = exportar_revisao(
+            identificador,
+            callback=lambda pct, msg: progresso(
+                0.80 + 0.20 * pct,
+                msg
+            )
         )
-    )
 
     progresso(1.0, "Video pronto para revisao")
 

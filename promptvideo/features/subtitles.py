@@ -1,6 +1,7 @@
 """Legendas opcionais: SRT editável e ASS renderizado no MP4.
 Versão de diagnóstico: registra FFmpeg/ffprobe e testa normalização temporal.
 """
+from promptvideo.core.performance import medir_etapa
 from pathlib import Path
 import os
 import re
@@ -159,7 +160,8 @@ def _probe(caminho, log):
     cmd = [ffmpeg_bin('ffprobe'), '-v', 'error', '-show_entries',
            'format=duration,size:stream=index,codec_type,codec_name,time_base,start_time,duration,avg_frame_rate',
            '-of', 'json', str(caminho)]
-    p = subprocess.run(cmd, capture_output=True, text=True, errors='replace', creationflags=_flags())
+    with medir_etapa('ffmpeg.legendas_convencionais'):
+        p = subprocess.run(cmd, capture_output=True, text=True, errors='replace', creationflags=_flags())
     log.write(f'FFPROBE {caminho}\nreturncode={p.returncode}\n{p.stdout}\n{p.stderr}\n\n')
     if p.returncode != 0:
         raise RuntimeError(f'Falha ao validar MP4 com ffprobe: {p.stderr[-1000:]}')
@@ -222,8 +224,9 @@ def legendar_video(video_editado, estilo='Tradicional', callback=None,
             if callback:
                 callback(0.65, 'Inserindo legendas no vídeo')
             with open(log_path, 'a', encoding='utf-8', errors='replace') as ff_log:
-                p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.DEVNULL,
-                                   stderr=ff_log, creationflags=_flags())
+                with medir_etapa('ffmpeg.legendas_convencionais'):
+                    p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.DEVNULL,
+                                       stderr=ff_log, creationflags=_flags())
             log.seek(0, os.SEEK_END)
             if p.returncode != 0:
                 raise RuntimeError(
@@ -319,7 +322,8 @@ def legendar_manual(video_editado, linhas, callback=None, visual='Clássica', ta
         if callback:
             callback(.5, 'Inserindo legendas manuais no MP4')
         with open(log_path, 'w', encoding='utf-8', errors='replace') as log:
-            p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.DEVNULL, stderr=log, creationflags=_flags())
+            with medir_etapa('ffmpeg.legendas_convencionais'):
+                p = subprocess.run(cmd, cwd=tmp, stdout=subprocess.DEVNULL, stderr=log, creationflags=_flags())
         if p.returncode != 0 or not saida_tmp.is_file() or not saida_tmp.stat().st_size:
             raise RuntimeError(f'Falha ao renderizar legendas manuais. Consulte o log: {log_path}')
         os.replace(saida_tmp, destino)

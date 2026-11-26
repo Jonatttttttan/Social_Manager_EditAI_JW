@@ -1,4 +1,5 @@
 
+from promptvideo.core.performance import medir_etapa
 import json
 import math
 import os
@@ -97,7 +98,8 @@ def _executar_ffprobe(caminho):
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-    resultado = subprocess.run(cmd, **kwargs)
+    with medir_etapa('ffprobe.render'):
+        resultado = subprocess.run(cmd, **kwargs)
 
     if resultado.returncode != 0:
         raise RuntimeError(
@@ -775,6 +777,44 @@ def renderizar_edicao(
             f"Início: {inicio:.6f}s | "
             f"Fim: {fim:.6f}s | "
             f"Duração: {fim - inicio:.6f}s",
+            flush=True,
+        )
+
+
+    # Caminho rapido para midia sem alteracoes.
+    if (
+        isinstance(cortes, (list, tuple))
+        and len(cortes) == 0
+        and ruido == "nenhum"
+        and transicao == "Nenhuma"
+        and (
+            melhorar_audio_habilitado is False
+            or not possui_audio
+        )
+        and len(manter) == 1
+        and abs(manter[0][0]) <= 0.000001
+        and abs(manter[0][1] - duracao_video) <= 0.000001
+    ):
+        from promptvideo.core.fast_path import tentar_copia_direta
+
+        with medir_etapa("render.copia_direta"):
+            sucesso, motivo = tentar_copia_direta(
+                origem, destino
+            )
+
+        if sucesso:
+            print(
+                "[FAST PATH] Copia direta sem recodificacao",
+                flush=True,
+            )
+
+            if callback:
+                callback(1.0, "Video editado sem recodificacao")
+
+            return destino
+
+        print(
+            "[FAST PATH] Motor convencional: " + motivo,
             flush=True,
         )
 

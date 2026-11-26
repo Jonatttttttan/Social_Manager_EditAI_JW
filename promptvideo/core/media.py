@@ -1,4 +1,5 @@
 
+from promptvideo.core.performance import medir_etapa
 import json
 import math
 import os
@@ -79,12 +80,13 @@ def executar(cmd, etapa, log=None):
 
     if log:
         with open(log, 'w', encoding='utf-8') as f:
-            p = subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=f,
-                creationflags=flags
-            )
+            with medir_etapa('ffmpeg.central.' + str(etapa)):
+                p = subprocess.run(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=f,
+                    creationflags=flags
+                )
 
         if p.returncode:
             linhas = (
@@ -104,13 +106,14 @@ def executar(cmd, etapa, log=None):
             )
 
     else:
-        p = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            creationflags=flags
-        )
+        with medir_etapa('ffmpeg.central.' + str(etapa)):
+            p = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=flags
+            )
 
         if p.returncode:
             raise RuntimeError(

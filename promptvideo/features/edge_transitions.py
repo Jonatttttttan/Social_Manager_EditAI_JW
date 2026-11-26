@@ -1,3 +1,4 @@
+from promptvideo.core.performance import medir_etapa
 import math
 
 TRANSICOES_EXTREMIDADES = (
@@ -143,6 +144,16 @@ def _intensidade_transicao(transicao, abertura, tempo):
     return progresso
 
 
+def _janela_temporal(transicao, abertura):
+    """Restringe o efeito ao intervalo necessario."""
+    if abertura:
+        fim = _numero_ffmpeg(transicao["fim"])
+        return f"lt(t,{fim})"
+
+    inicio = _numero_ffmpeg(transicao["inicio"])
+    return f"gte(t,{inicio})"
+
+
 def _filtro_geometrico(transicao, abertura):
     nome = transicao["nome"]
 
@@ -218,6 +229,7 @@ def _filtro_geometrico(transicao, abertura):
     return (
         "format=yuv420p,geq="
         + ":".join(expressoes)
+        + f":enable='{_janela_temporal(transicao, abertura)}'"
     )
 
 
@@ -229,12 +241,13 @@ def _filtro_desfoque(transicao, abertura, indice):
     original = f"edge_original_{indice}"
     copia = f"edge_copia_{indice}"
     blur = f"edge_blur_{indice}"
+    janela = _janela_temporal(transicao, abertura)
 
     return (
         f"split=2[{original}][{copia}];"
-        f"[{copia}]gblur=sigma=15[{blur}];"
+        f"[{copia}]gblur=sigma=15:enable='{janela}'[{blur}];"
         f"[{original}][{blur}]"
-        f"blend=all_expr='A*(1-{q})+B*{q}'"
+        f"blend=all_expr='A*(1-{q})+B*{q}':enable='{janela}'"
     )
 
 
@@ -389,12 +402,13 @@ def aplicar_transicoes_extremidades(
             )
             log.flush()
 
-            processo = subprocess.run(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=log,
-                creationflags=_flags(),
-            )
+            with medir_etapa('ffmpeg.transicoes'):
+                processo = subprocess.run(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=log,
+                    creationflags=_flags(),
+                )
 
         if processo.returncode != 0:
             raise RuntimeError(

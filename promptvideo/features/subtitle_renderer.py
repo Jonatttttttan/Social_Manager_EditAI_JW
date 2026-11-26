@@ -1,5 +1,6 @@
 """Renderizacao de legendas previamente transcritas."""
 
+from promptvideo.core.performance import medir_etapa
 import os
 import math
 import shutil
@@ -211,13 +212,14 @@ def renderizar_legendas_salvas(
             _probe(video, log)
             log.flush()
 
-            processo = subprocess.run(
-                cmd,
-                cwd=tmp,
-                stdout=subprocess.DEVNULL,
-                stderr=log,
-                creationflags=_flags()
-            )
+            with medir_etapa('ffmpeg.legendas'):
+                processo = subprocess.run(
+                    cmd,
+                    cwd=tmp,
+                    stdout=subprocess.DEVNULL,
+                    stderr=log,
+                    creationflags=_flags()
+                )
 
             if processo.returncode != 0:
                 raise RuntimeError(
