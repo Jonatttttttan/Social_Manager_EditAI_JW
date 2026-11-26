@@ -276,7 +276,7 @@ def _barra(nome, fracao, etapa, estado='processando'):
 
 INSTAGRAM_UI_ENABLED = INSTAGRAM_ENABLED
 
-def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais,*extras):
+def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais,*extras,transicoes=None):
 
     ensure_valid()
 
@@ -289,6 +289,24 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
         validar_volume(volume_musica)
     except (ValueError, TypeError, OSError) as erro:
         raise gr.Error(str(erro)) from erro
+
+    from promptvideo.features.subtitle_storage import (
+        normalizar_config_transicoes,
+    )
+
+    from promptvideo.features.edge_transitions import (
+        aplicar_transicoes_extremidades,
+    )
+
+    usar_novas_transicoes = transicoes is not None
+
+    try:
+        transicoes = normalizar_config_transicoes(transicoes)
+    except (ValueError, TypeError) as erro:
+        raise gr.Error(str(erro)) from erro
+
+    if usar_novas_transicoes:
+        transicao = "Nenhuma"
 
     zoom_valores = extras[:60]
 
@@ -314,15 +332,35 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
 
             caminho=aplicar_zoom(caminho,intervalos_zoom,callback=lambda msg:cb(.74,msg))
 
+        if modo_legendas == "Autom\u00e1ticas" and leg:
+            from promptvideo.features.subtitle_pipeline import exportar_com_revisao
+
+            return exportar_com_revisao(
+                caminho,
+                estilo=estilo,
+                visual=visual,
+                tamanho=tamanho,
+                posicao=posicao,
+                trilha=trilha,
+                arquivo_musica=arquivo_musica,
+                volume_musica=volume_musica,
+                manter_audio=manter_audio,
+                fade_musica=fade_musica,
+                eventos_efeitos=eventos_efeitos,
+                filtro_video=filtro_video,
+                intensidade_filtro=intensidade_filtro,
+                brilho_filtro=brilho_filtro,
+                contraste_filtro=contraste_filtro,
+                transicoes=transicoes,
+                callback=lambda p,s:cb(.76+.24*p,s)
+            )
+
         srt=None
 
         if modo_legendas == 'Manuais':
 
             caminho,srt=legendar_manual(caminho,legendas_manuais,callback=lambda p,s:cb(.72+.28*p,s),visual=visual,tamanho=tamanho,posicao=posicao)
 
-        elif modo_legendas == 'Automáticas' and leg:
-
-            caminho,srt=legendar_video(caminho,estilo,callback=lambda p,s:cb(.72+.28*p,s),visual=visual,tamanho=tamanho,posicao=posicao)
 
         caminho=adicionar_musica(caminho,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,callback=lambda msg:cb(.98,msg))
 
@@ -332,7 +370,13 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
 
         caminho=aplicar_filtro_video(caminho,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,callback=lambda msg:cb(.99,msg))
 
-        return caminho,srt
+        caminho = aplicar_transicoes_extremidades(
+            caminho,
+            **transicoes,
+            callback=lambda msg: cb(.995, msg)
+        )
+
+        return caminho,srt,None
 
     for tipo,dados in _executar_com_eventos(trabalho):
 
@@ -340,17 +384,55 @@ def aplicar_com_progresso(ident,cortes,leg,estilo,visual,tamanho,posicao,transic
 
             pct,etapa=dados
 
-            yield _barra('Seu vídeo',pct,etapa),gr.update(),gr.update(),gr.update(),gr.update(),gr.update(visible=False),gr.update(visible=False)
+            yield _barra('Seu vídeo',pct,etapa),gr.update(),gr.update(),gr.update(),gr.update(),gr.update(visible=False),gr.update(visible=False), None
 
         elif tipo=='resultado':
 
-            caminho,srt=dados
+            caminho,srt,sessao_legendas=dados
 
-            yield _barra('Seu vídeo',1,'Concluído','concluido'),gr.update(value=caminho,visible=True),gr.update(value=caminho,visible=True),gr.update(value=srt,visible=bool(srt)),gr.update(value='✅ Vídeo pronto! Use a área de download destacada abaixo.',visible=True),gr.update(visible=True),gr.update(visible=INSTAGRAM_UI_ENABLED)
+            yield _barra('Seu vídeo',1,'Concluído','concluido'),gr.update(value=caminho,visible=True),gr.update(value=caminho,visible=True),gr.update(value=srt,visible=bool(srt)),gr.update(value='✅ Vídeo pronto! Use a área de download destacada abaixo.',visible=True),gr.update(visible=True),gr.update(visible=INSTAGRAM_UI_ENABLED), sessao_legendas
 
         elif tipo=='erro':
 
-            yield _barra('Seu vídeo',1,'Falha na edição','erro'),gr.update(),gr.update(),gr.update(),gr.update(value='❌ '+html.escape(str(dados)),visible=True),gr.update(visible=False),gr.update(visible=False)
+            yield _barra('Seu vídeo',1,'Falha na edição','erro'),gr.update(),gr.update(),gr.update(),gr.update(value='❌ '+html.escape(str(dados)),visible=True),gr.update(visible=False),gr.update(visible=False), None
+
+
+def _config_transicoes_interface(a, da, e, de):
+    return {
+        "abertura": a,
+        "duracao_abertura": da,
+        "encerramento": e,
+        "duracao_encerramento": de,
+    }
+
+
+def aplicar_com_transicoes_interface(*valores):
+    config = _config_transicoes_interface(*valores[7:11])
+
+    argumentos = (
+        valores[:7]
+        + ("Nenhuma", 0.7)
+        + valores[11:]
+    )
+
+    yield from aplicar_com_progresso(
+        *argumentos, transicoes=config
+    )
+
+
+def lote_com_transicoes_interface(*valores):
+    config = _config_transicoes_interface(*valores[7:11])
+
+    argumentos = (
+        valores[:7]
+        + ("Nenhuma", 0.7)
+        + valores[11:]
+    )
+
+    yield from lote_com_progresso(
+        *argumentos, transicoes=config
+    )
+
 
 CAMPOS_PRESET_LOTE = (
 
@@ -372,9 +454,10 @@ CAMPOS_PRESET_LOTE = (
 
     "posicao",
 
-    "transicao",
-
-    "duracao_transicao",
+    "abertura",
+    "duracao_abertura",
+    "encerramento",
+    "duracao_encerramento",
 
     "trilha",
 
@@ -424,6 +507,31 @@ def validar_configuracao_preset_lote(configuracoes):
 
         raise ValueError("Preset inválido: configurações ausentes.")
 
+    configuracoes = dict(configuracoes)
+
+    novos_campos = {
+        "abertura", "duracao_abertura",
+        "encerramento", "duracao_encerramento",
+    }
+
+    campos_antigos = {
+        "transicao", "duracao_transicao",
+    }
+
+    campos_base = set(CAMPOS_PRESET_LOTE) - novos_campos
+
+    if set(configuracoes) == campos_base | campos_antigos:
+        configuracoes.update({
+            "abertura": "Nenhuma",
+            "duracao_abertura": 1.0,
+            "encerramento": "Nenhuma",
+            "duracao_encerramento": 1.0,
+        })
+
+    if novos_campos.issubset(configuracoes):
+        for campo in campos_antigos:
+            configuracoes.pop(campo, None)
+
     if set(configuracoes) != set(CAMPOS_PRESET_LOTE):
 
         raise ValueError("Preset incompatível com esta versão do EditAI.")
@@ -462,7 +570,12 @@ def validar_configuracao_preset_lote(configuracoes):
 
     numero("tamanho", 60, 160)
 
-    numero("duracao_transicao", 0.2, 2.0)
+    numero("duracao_abertura", 0.2, 3.0)
+    numero("duracao_encerramento", 0.2, 3.0)
+
+    from promptvideo.features.edge_transitions import (
+        TRANSICOES_EXTREMIDADES,
+    )
 
     numero("volume_musica", 0, 100)
 
@@ -480,7 +593,8 @@ def validar_configuracao_preset_lote(configuracoes):
 
         "posicao": ("Inferior", "Centro", "Superior"),
 
-        "transicao": ("Nenhuma", "Dissolver", "Fade para preto", "Deslizar"),
+        "abertura": TRANSICOES_EXTREMIDADES,
+        "encerramento": TRANSICOES_EXTREMIDADES,
 
         "trilha": TRACKS,
 
@@ -637,9 +751,21 @@ def excluir_preset_lote_interface(nome):
 
         raise gr.Error(str(erro))
 
-def lote_com_progresso(arquivos,instrucao,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,eliminar_silencios,segundos_silencio,melhorar_audio):
+def lote_com_progresso(arquivos,instrucao,leg,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,eliminar_silencios,segundos_silencio,melhorar_audio,transicoes=None):
 
     ensure_valid()
+
+    from promptvideo.features.subtitle_storage import (
+        normalizar_config_transicoes,
+    )
+
+    if transicoes is not None:
+        try:
+            transicoes = normalizar_config_transicoes(transicoes)
+        except (ValueError, TypeError) as erro:
+            raise gr.Error(str(erro)) from erro
+
+        transicao = "Nenhuma"
 
     instrucao = criar_plano_checkboxes(
 
@@ -665,7 +791,7 @@ def lote_com_progresso(arquivos,instrucao,leg,estilo,visual,tamanho,posicao,tran
 
     def trabalho(cb):
 
-        return executar_lote(arquivos,instrucao,leg,estilo,status_callback=lambda *args:cb(*args),visual=visual,tamanho=tamanho,posicao=posicao,transicao=transicao,duracao_transicao=duracao_transicao,trilha=trilha,arquivo_musica=arquivo_musica,volume_musica=volume_musica,manter_audio=manter_audio,fade_musica=fade_musica,filtro_video=filtro_video,intensidade_filtro=intensidade_filtro,brilho_filtro=brilho_filtro,contraste_filtro=contraste_filtro)
+        return executar_lote(arquivos,instrucao,leg,estilo,status_callback=lambda *args:cb(*args),visual=visual,tamanho=tamanho,posicao=posicao,transicao=transicao,duracao_transicao=duracao_transicao,trilha=trilha,arquivo_musica=arquivo_musica,volume_musica=volume_musica,manter_audio=manter_audio,fade_musica=fade_musica,filtro_video=filtro_video,intensidade_filtro=intensidade_filtro,brilho_filtro=brilho_filtro,contraste_filtro=contraste_filtro,transicoes=transicoes)
 
     yield painel(),gr.update(),gr.update(),gr.update(visible=False)
 
@@ -699,6 +825,10 @@ _GRADIO6 = int(gr.__version__.split('.')[0]) >= 6
 
 _blocks_style = {} if _GRADIO6 else {'css': CSS, 'theme': gr.themes.Base(primary_hue=gr.themes.colors.yellow, neutral_hue=gr.themes.colors.slate)}
 
+CSS += '\n/* Melhoria 04 - Front-end e UX */\n\n#jw-individual-config {\n    width: 100% !important;\n    max-width: 960px !important;\n    min-width: 0 !important;\n    margin: 0 auto !important;\n    box-sizing: border-box !important;\n    gap: 14px !important;\n}\n\n#jw-presets-lote {\n    border: 2px solid #facc15 !important;\n    border-radius: 16px !important;\n    background: #151d29 !important;\n    padding: 16px !important;\n    box-shadow: 0 0 0 3px rgba(250,204,21,.06) !important;\n}\n\n#jw-presets-lote > button,\n#jw-presets-lote > .label-wrap,\n#jw-presets-lote > .label-wrap > button {\n    color: #facc15 !important;\n    font-size: 1.2rem !important;\n    font-weight: 850 !important;\n}\n\n#jw-presets-lote input,\n#jw-presets-lote textarea {\n    border-color: #52627a !important;\n}\n\n.jw-transition-warning {\n    padding: 13px 15px;\n    margin: 8px 0 12px;\n    background: #292414;\n    border: 1px solid #80651c;\n    border-left: 4px solid #facc15;\n    border-radius: 10px;\n    line-height: 1.55;\n}\n\n.jw-transition-warning strong {\n    color: #facc15 !important;\n    font-size: .95rem;\n}\n\n.jw-transition-warning p {\n    color: #e5e7eb !important;\n    margin: 6px 0 0;\n    font-size: .88rem;\n}\n\n@media(max-width:760px) {\n    #jw-individual-config {\n        max-width: 100% !important;\n        min-width: 0 !important;\n    }\n\n    #jw-presets-lote {\n        padding: 10px !important;\n    }\n}\n'
+if "css" in _blocks_style:
+    _blocks_style["css"] = CSS
+
 with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_blocks_style) as app:
 
     gr.HTML('<header id="hero"><div class="jw-eyebrow">✦ ESTÚDIO INTELIGENTE <span class="jw-version">BETA 2 · 0.9.8.4</span></div><h1>EditAI <span>Videos JW</span></h1><p>Da ideia ao vídeo pronto. Importe seus arquivos, descreva a edição e personalize o resultado em poucos passos.</p><div class="jw-hero-tags"><span>⚡ Edição automática</span><span>🎵 Música</span><span>🎨 Filtros</span><span>✨ Transições</span></div></header>')
@@ -713,199 +843,196 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
             gr.Markdown('Envie um arquivo MP4 ou MOV. Você poderá conferir os cortes sugeridos antes de editar. A exportação será em MP4.', elem_classes=['helper'])
 
-            with gr.Accordion("Templates EditAI", open=True):
+            video=gr.File(label='Seu vídeo (MP4 ou MOV)',file_types=['.mp4','.mov'],type='filepath')
+
+            with gr.Accordion("Templates EditAI", open=False):
 
                 seletor_template_individual = criar_seletor_templates()
 
-            with gr.Row(equal_height=False):
+            with gr.Column(elem_id="jw-individual-config"):
+                gr.Markdown('### ② Personalize sua edição',elem_classes=['jw-section-heading'])
 
-                with gr.Column(scale=6):
+                reduzir_ruido=gr.Checkbox(label='Reduzir ruído de fundo',value=False)
 
-                    video=gr.File(label='Seu vídeo (MP4 ou MOV)',file_types=['.mp4','.mov'],type='filepath')
+                eliminar_silencios=gr.Checkbox(label='Eliminar pausas de silêncio',value=False)
 
-                with gr.Column(scale=5):
+                segundos_silencio=gr.Radio(
 
-                    gr.Markdown('### ② Descreva a edição',elem_classes=['jw-section-heading'])
+                    choices=[1,2,3,4,5],
 
-                    reduzir_ruido=gr.Checkbox(label='Reduzir ruído de fundo',value=False)
+                    value=2,
 
-                    eliminar_silencios=gr.Checkbox(label='Eliminar pausas de silêncio',value=False)
+                    label='Eliminar pausas maiores que (segundos)',
 
-                    segundos_silencio=gr.Radio(
+                    visible=False
 
-                        choices=[1,2,3,4,5],
+                )
 
-                        value=2,
+                melhorar_audio_opcao=gr.Checkbox(label='Melhorar áudio',value=True)
 
-                        label='Eliminar pausas maiores que (segundos)',
+                eliminar_silencios.change(
 
-                        visible=False
+                    lambda ativo: gr.update(visible=ativo),
 
-                    )
+                    inputs=eliminar_silencios,
 
-                    melhorar_audio_opcao=gr.Checkbox(label='Melhorar áudio',value=True)
+                    outputs=segundos_silencio
 
-                    eliminar_silencios.change(
+                )
 
-                        lambda ativo: gr.update(visible=ativo),
+                gr.HTML('<section class="jw-feature-intro"><h3>▣ Legendas do vídeo</h3><p>Escolha como as legendas serão criadas: sem legendas, geradas automaticamente a partir das falas ou escritas por você com horários personalizados.</p></section>')
 
-                        inputs=eliminar_silencios,
+                modo_legendas=gr.Radio(choices=['Sem legendas','Automáticas','Manuais'],value='Sem legendas',label='Tipo de legendas')
 
-                        outputs=segundos_silencio
+                with gr.Column(visible=False) as painel_manuais:
 
-                    )
+                    gr.Markdown('**Digite o texto e os horários de cada legenda.** Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm` para milissegundos. Os horários correspondem ao **vídeo final, após os cortes**. As legendas aparecem no MP4 e também são exportadas em SRT.', elem_id='jw-caption-help')
 
-                    gr.HTML('<section class="jw-feature-intro"><h3>▣ Legendas do vídeo</h3><p>Escolha como as legendas serão criadas: sem legendas, geradas automaticamente a partir das falas ou escritas por você com horários personalizados.</p></section>')
+                    legendas_manuais=gr.Dataframe(headers=['Texto da legenda','Início (MM:SS)','Fim (MM:SS)'],datatype=['str','str','str'],value=[['Bem-vindos ao vídeo!','00:00','00:03']],row_count=(1,'dynamic'),col_count=(3,'fixed'),type='array',label='Legendas personalizadas',interactive=True,elem_id='jw-manual-captions')
 
-                    modo_legendas=gr.Radio(choices=['Sem legendas','Automáticas','Manuais'],value='Sem legendas',label='Tipo de legendas')
+                    with gr.Row():
 
-                    with gr.Column(visible=False) as painel_manuais:
+                        adicionar_legenda=gr.Button('＋ Adicionar legenda',variant='primary',elem_id='jw-add-caption')
 
-                        gr.Markdown('**Digite o texto e os horários de cada legenda.** Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm` para milissegundos. Os horários correspondem ao **vídeo final, após os cortes**. As legendas aparecem no MP4 e também são exportadas em SRT.', elem_id='jw-caption-help')
+                        remover_legenda=gr.Button('− Remover última legenda',variant='secondary',elem_id='jw-remove-caption')
 
-                        legendas_manuais=gr.Dataframe(headers=['Texto da legenda','Início (MM:SS)','Fim (MM:SS)'],datatype=['str','str','str'],value=[['Bem-vindos ao vídeo!','00:00','00:03']],row_count=(1,'dynamic'),col_count=(3,'fixed'),type='array',label='Legendas personalizadas',interactive=True,elem_id='jw-manual-captions')
+                    gr.Markdown('**Exemplo:** `Olá, pessoal!` | `00:01` | `00:04`  ·  Para apagar uma legenda específica, limpe sua linha ou use o menu da tabela.',elem_classes=['helper'],elem_id='jw-caption-example')
 
-                        with gr.Row():
+                    def _adicionar_linha_legenda(linhas):
 
-                            adicionar_legenda=gr.Button('＋ Adicionar legenda',variant='primary',elem_id='jw-add-caption')
+                        if hasattr(linhas,'values'): linhas=linhas.values.tolist()
 
-                            remover_legenda=gr.Button('− Remover última legenda',variant='secondary',elem_id='jw-remove-caption')
+                        linhas=[list(l) for l in (linhas or [])]
 
-                        gr.Markdown('**Exemplo:** `Olá, pessoal!` | `00:01` | `00:04`  ·  Para apagar uma legenda específica, limpe sua linha ou use o menu da tabela.',elem_classes=['helper'],elem_id='jw-caption-example')
+                        linhas.append(['','00:00','00:03'])
 
-                        def _adicionar_linha_legenda(linhas):
+                        return linhas
 
-                            if hasattr(linhas,'values'): linhas=linhas.values.tolist()
+                    def _remover_linha_legenda(linhas):
 
-                            linhas=[list(l) for l in (linhas or [])]
+                        if hasattr(linhas,'values'): linhas=linhas.values.tolist()
 
-                            linhas.append(['','00:00','00:03'])
+                        linhas=[list(l) for l in (linhas or [])]
 
-                            return linhas
+                        return linhas[:-1] if len(linhas)>1 else [['','00:00','00:03']]
 
-                        def _remover_linha_legenda(linhas):
+                    adicionar_legenda.click(_adicionar_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
 
-                            if hasattr(linhas,'values'): linhas=linhas.values.tolist()
+                    remover_legenda.click(_remover_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
 
-                            linhas=[list(l) for l in (linhas or [])]
+                gr.HTML('<section class="jw-feature-intro"><h3>✦ Legendas automáticas</h3><p>O EditAI transcreve as falas e sincroniza as legendas. Selecione <strong>Automáticas</strong> acima para ativar e personalizar o estilo.</p></section>')
 
-                            return linhas[:-1] if len(linhas)>1 else [['','00:00','00:03']]
+                ativar_legendas=gr.Checkbox(label='Adicionar legendas ao vídeo final',value=False)
 
-                        adicionar_legenda.click(_adicionar_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
+                estilo=gr.Radio(choices=['Tradicional','Dinâmica'],value='Tradicional',label='Como mostrar as legendas',visible=False)
 
-                        remover_legenda.click(_remover_linha_legenda,inputs=legendas_manuais,outputs=legendas_manuais,queue=False)
+                with gr.Column(visible=False) as aparencia:
 
-                    gr.HTML('<section class="jw-feature-intro"><h3>✦ Legendas automáticas</h3><p>O EditAI transcreve as falas e sincroniza as legendas. Selecione <strong>Automáticas</strong> acima para ativar e personalizar o estilo.</p></section>')
+                    visual=gr.Dropdown(choices=list(ESTILOS_VISUAIS),value='Clássica',label='Estilo visual das legendas')
 
-                    ativar_legendas=gr.Checkbox(label='Adicionar legendas ao vídeo final',value=False)
+                    tamanho=gr.Slider(minimum=60,maximum=160,step=1,value=100,label='Tamanho da legenda (%)')
 
-                    estilo=gr.Radio(choices=['Tradicional','Dinâmica'],value='Tradicional',label='Como mostrar as legendas',visible=False)
+                    posicao=gr.Radio(choices=['Inferior','Centro','Superior'],value='Inferior',label='Posição da legenda')
 
-                    with gr.Column(visible=False) as aparencia:
+                    gr.Markdown('**Dica:** “Palavra destacada” combina com o modo Dinâmica. As escolhas são aplicadas ao MP4 exportado.')
 
-                        visual=gr.Dropdown(choices=list(ESTILOS_VISUAIS),value='Clássica',label='Estilo visual das legendas')
+                # Registre os eventos somente depois de criar todos os componentes.
 
-                        tamanho=gr.Slider(minimum=60,maximum=160,step=1,value=100,label='Tamanho da legenda (%)')
+                # As legendas manuais utilizam as opcoes visuais, sem exigir a caixa de legendas automaticas.
 
-                        posicao=gr.Radio(choices=['Inferior','Centro','Superior'],value='Inferior',label='Posição da legenda')
+                modo_legendas.change(
 
-                        gr.Markdown('**Dica:** “Palavra destacada” combina com o modo Dinâmica. As escolhas são aplicadas ao MP4 exportado.')
+                    lambda m: (
 
-                    # Registre os eventos somente depois de criar todos os componentes.
+                        gr.update(visible=m == 'Manuais'),
 
-                    # As legendas manuais utilizam as opcoes visuais, sem exigir a caixa de legendas automaticas.
+                        gr.update(value=m == 'Automáticas', visible=m == 'Automáticas'),
 
-                    modo_legendas.change(
+                        gr.update(visible=m == 'Automáticas'),
 
-                        lambda m: (
+                        gr.update(visible=m in ('Manuais', 'Automáticas')),
 
-                            gr.update(visible=m == 'Manuais'),
+                    ),
 
-                            gr.update(value=m == 'Automáticas', visible=m == 'Automáticas'),
+                    inputs=modo_legendas,
 
-                            gr.update(visible=m == 'Automáticas'),
+                    outputs=[painel_manuais, ativar_legendas, estilo, aparencia],
 
-                            gr.update(visible=m in ('Manuais', 'Automáticas')),
+                )
 
-                        ),
+                ativar_legendas.change(
 
-                        inputs=modo_legendas,
+                    lambda x: gr.update(visible=bool(x)),
 
-                        outputs=[painel_manuais, ativar_legendas, estilo, aparencia],
+                    inputs=ativar_legendas,
 
-                    )
+                    outputs=estilo,
 
-                    ativar_legendas.change(
+                )
 
-                        lambda x: gr.update(visible=bool(x)),
+                gr.HTML('<section class="jw-feature-intro"><h3>🔎 Zoom programável</h3><p>Aproxime suavemente partes do vídeo para destacar detalhes. Defina a posição, a intensidade e os horários; abra a seção abaixo para configurar os zooms.</p></section>')
 
-                        inputs=ativar_legendas,
+                with gr.Accordion('🔎 Zoom programável · Opcional', open=False, elem_id='jw-zoom-section'):
 
-                        outputs=estilo,
+                    gr.Markdown('**Destaque momentos importantes com uma aproximação suave.** Escolha esquerda, centro ou direita, a intensidade e o intervalo de cada zoom. Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm`. Os horários se referem ao vídeo final, após os cortes, e não podem se sobrepor.', elem_id='jw-zoom-help')
 
-                    )
+                    gr.Markdown('**Intervalos de zoom**')
 
-                    gr.HTML('<section class="jw-feature-intro"><h3>🔎 Zoom programável</h3><p>Aproxime suavemente partes do vídeo para destacar detalhes. Defina a posição, a intensidade e os horários; abra a seção abaixo para configurar os zooms.</p></section>')
+                    zoom_controles = []
 
-                    with gr.Accordion('🔎 Zoom programável · Opcional', open=False, elem_id='jw-zoom-section'):
+                    zoom_grupos = []
 
-                        gr.Markdown('**Destaque momentos importantes com uma aproximação suave.** Escolha esquerda, centro ou direita, a intensidade e o intervalo de cada zoom. Use `MM:SS` (ex.: `00:01` até `00:32`) ou `MM:SS.mmm`. Os horários se referem ao vídeo final, após os cortes, e não podem se sobrepor.', elem_id='jw-zoom-help')
+                    MAX_ZOOMS = 12
 
-                        gr.Markdown('**Intervalos de zoom**')
+                    for indice_zoom in range(MAX_ZOOMS):
 
-                        zoom_controles = []
+                        with gr.Group(visible=False, elem_classes=['jw-zoom-item']) as grupo_zoom:
 
-                        zoom_grupos = []
+                            gr.Markdown(f'**Zoom {indice_zoom + 1}**')
 
-                        MAX_ZOOMS = 12
+                            with gr.Row():
 
-                        for indice_zoom in range(MAX_ZOOMS):
+                                zoom_pos = gr.Dropdown(choices=['Esquerda','Centro','Direita'], value='Centro', label='Posição', interactive=True, elem_classes=['jw-zoom-select'])
 
-                            with gr.Group(visible=(indice_zoom == 0), elem_classes=['jw-zoom-item']) as grupo_zoom:
+                                zoom_inicio = gr.Textbox(value='00:01', label='Início (MM:SS)', placeholder='00:01', interactive=True)
 
-                                gr.Markdown(f'**Zoom {indice_zoom + 1}**')
+                                zoom_fim = gr.Textbox(value='00:04', label='Fim (MM:SS)', placeholder='00:04', interactive=True)
 
-                                with gr.Row():
+                                zoom_intensidade = gr.Dropdown(choices=['1.2x','1.5x','2.0x'], value='1.5x', label='Intensidade', interactive=True, elem_classes=['jw-zoom-select'])
 
-                                    zoom_pos = gr.Dropdown(choices=['Esquerda','Centro','Direita'], value='Centro', label='Posição', interactive=True, elem_classes=['jw-zoom-select'])
+                            zoom_ativo = gr.State(False)
 
-                                    zoom_inicio = gr.Textbox(value='00:01', label='Início (MM:SS)', placeholder='00:01', interactive=True)
+                            zoom_controles.extend([zoom_ativo, zoom_pos, zoom_inicio, zoom_fim, zoom_intensidade])
 
-                                    zoom_fim = gr.Textbox(value='00:04', label='Fim (MM:SS)', placeholder='00:04', interactive=True)
+                            zoom_grupos.append(grupo_zoom)
 
-                                    zoom_intensidade = gr.Dropdown(choices=['1.2x','1.5x','2.0x'], value='1.5x', label='Intensidade', interactive=True, elem_classes=['jw-zoom-select'])
+                    zoom_quantidade = gr.State(0)
 
-                                zoom_ativo = gr.State(indice_zoom == 0)
+                    with gr.Row():
 
-                                zoom_controles.extend([zoom_ativo, zoom_pos, zoom_inicio, zoom_fim, zoom_intensidade])
+                        adicionar_zoom = gr.Button('＋ Adicionar zoom', variant='primary')
 
-                                zoom_grupos.append(grupo_zoom)
+                        remover_zoom = gr.Button('− Remover último zoom', variant='secondary')
 
-                        zoom_quantidade = gr.State(1)
+                    def _alterar_quantidade_zooms(qtd, incremento):
 
-                        with gr.Row():
+                        novo = max(0, min(MAX_ZOOMS, int(qtd) + incremento))
 
-                            adicionar_zoom = gr.Button('＋ Adicionar zoom', variant='primary')
+                        return [novo] + [gr.update(visible=(i < novo)) for i in range(MAX_ZOOMS)] + [i < novo for i in range(MAX_ZOOMS)]
 
-                            remover_zoom = gr.Button('− Remover último zoom', variant='secondary')
+                    saidas_zoom = [zoom_quantidade] + zoom_grupos + zoom_controles[::5]
 
-                        def _alterar_quantidade_zooms(qtd, incremento):
+                    adicionar_zoom.click(lambda n: _alterar_quantidade_zooms(n, 1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
 
-                            novo = max(1, min(MAX_ZOOMS, int(qtd) + incremento))
+                    remover_zoom.click(lambda n: _alterar_quantidade_zooms(n, -1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
 
-                            return [novo] + [gr.update(visible=(i < novo)) for i in range(MAX_ZOOMS)] + [i < novo for i in range(MAX_ZOOMS)]
+                    gr.Markdown('**Exemplo:** posição **Esquerda**, início **00:03**, fim **00:08**, intensidade **1.2x**. Máximo de 12 intervalos.', elem_id='jw-zoom-example')
 
-                        saidas_zoom = [zoom_quantidade] + zoom_grupos + zoom_controles[::5]
+                analisar=gr.Button('🔍 Analisar meu vídeo',variant='primary',elem_id='primary-action')
 
-                        adicionar_zoom.click(lambda n: _alterar_quantidade_zooms(n, 1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
-
-                        remover_zoom.click(lambda n: _alterar_quantidade_zooms(n, -1), inputs=zoom_quantidade, outputs=saidas_zoom, queue=False)
-
-                        gr.Markdown('**Exemplo:** posição **Esquerda**, início **00:03**, fim **00:08**, intensidade **1.2x**. Máximo de 12 intervalos.', elem_id='jw-zoom-example')
-
-                    analisar=gr.Button('🔍 Analisar meu vídeo',variant='primary',elem_id='primary-action')
 
             identificador=gr.State('')
+            sessao_revisao=gr.State(None)
 
             gr.Markdown('### ③ Personalize e exporte',elem_classes=['jw-section-heading'])
 
@@ -941,11 +1068,13 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                     with gr.Accordion('✨ Transições · Opcional',open=False):
 
-                        gr.Markdown('Escolha como os trechos preservados serão unidos. O efeito é aplicado em todas as junções; com apenas um trecho, não há transição.')
-
-                        transicao=gr.Radio(choices=['Nenhuma','Dissolver','Fade para preto','Deslizar'],value='Nenhuma',label='Efeito de transição')
-
-                        duracao_transicao=gr.Slider(minimum=0.2,maximum=2.0,step=0.1,value=0.7,label='Duração da transição (segundos)')
+                        from promptvideo.features.edge_transitions import TRANSICOES_EXTREMIDADES
+                        gr.Markdown("Personalize o início e o fim do vídeo.")
+                        gr.HTML('<div class="jw-transition-warning" role="note"><strong>⚠ Tempo de processamento</strong><p>A aplicação de transições pode aumentar o tempo de edição, dependendo do efeito escolhido, da resolução do vídeo e do desempenho do computador.</p></div>')
+                        abertura=gr.Dropdown(choices=list(TRANSICOES_EXTREMIDADES),value="Nenhuma",label="Transição de abertura")
+                        duracao_abertura=gr.Slider(minimum=0.2,maximum=3.0,step=0.1,value=1.0,label="Duração da abertura (segundos)")
+                        encerramento=gr.Dropdown(choices=list(TRANSICOES_EXTREMIDADES),value="Nenhuma",label="Transição de encerramento")
+                        duracao_encerramento=gr.Slider(minimum=0.2,maximum=3.0,step=0.1,value=1.0,label="Duração do encerramento (segundos)")
 
                     with gr.Accordion('🎵 Música de fundo · Opcional',open=False):
 
@@ -987,7 +1116,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                         for i_fx in range(MAX_FX):
 
-                            with gr.Group(visible=(i_fx==0),elem_classes=['jw-zoom-item']) as fx_grupo:
+                            with gr.Group(visible=False,elem_classes=['jw-zoom-item']) as fx_grupo:
 
                                 gr.Markdown(f'**Efeito {i_fx+1}**')
 
@@ -999,13 +1128,13 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                                     fx_volume=gr.Slider(minimum=0,maximum=100,step=5,value=70,label='Volume (%)')
 
-                                fx_ativo=gr.State(i_fx==0)
+                                fx_ativo = gr.State(False)
 
                                 fx_controles.extend([fx_ativo,fx_nome,fx_inicio,fx_volume])
 
                                 fx_grupos.append(fx_grupo)
 
-                        fx_quantidade=gr.State(1)
+                        fx_quantidade = gr.State(0)
 
                         with gr.Row():
 
@@ -1015,7 +1144,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                         def _alterar_qtd_fx(qtd,delta):
 
-                            novo=max(1,min(MAX_FX,int(qtd)+delta))
+                            novo=max(0, min(MAX_FX,int(qtd)+delta))
 
                             return [novo]+[gr.update(visible=i<novo) for i in range(MAX_FX)]+[i<novo for i in range(MAX_FX)]
 
@@ -1056,6 +1185,44 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
             download=gr.File(label='⬇ DOWNLOAD — Clique para baixar o vídeo MP4',visible=False,elem_id='download-video')
 
             arquivo_srt=gr.File(label='Baixar arquivo de legendas SRT',visible=False)
+
+            from promptvideo.ui.subtitle_editor_ui import (
+                carregar_editor_legendas,
+                restaurar_editor_legendas,
+                reexportar_editor_legendas,
+            )
+
+            with gr.Group(visible=False) as painel_revisao_legendas:
+                gr.Markdown("### Corrigir legendas autom\u00e1ticas")
+
+                gr.Markdown(
+                    "Corrija os textos sem repetir os cortes, "
+                    "efeitos ou a transcri\u00e7\u00e3o do v\u00eddeo."
+                )
+
+                tabela_revisao_legendas = gr.Dataframe(
+                    headers=["N\u00ba", "In\u00edcio", "Fim", "Texto da legenda"],
+                    datatype=["str", "str", "str", "str"],
+                    value=[],
+                    type="array",
+                    row_count=(1, "fixed"),
+                    column_count=(4, "fixed"),
+                    static_columns=[0, 1, 2],
+                    interactive=True,
+                    label="Legendas para revis\u00e3o"
+                )
+
+                with gr.Row():
+                    botao_reexportar_legendas = gr.Button(
+                        "Gerar v\u00eddeo corrigido",
+                        variant="primary"
+                    )
+
+                    botao_restaurar_legendas = gr.Button(
+                        "Restaurar textos originais"
+                    )
+
+                status_revisao_legendas = gr.Markdown("")
 
             analisar.click(analisar_guiado,[video,reduzir_ruido,eliminar_silencios,segundos_silencio,melhorar_audio_opcao],[identificador,resumo,cortes,transcricao,aplicar],concurrency_limit=1)
 
@@ -1220,7 +1387,43 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                 if INSTAGRAM_UI_ENABLED:
                     ig_publicar_novo.click(_ig_nova_publicacao, [ig_job_novo, ig_confirmar_novo, ig_pronto_novo], [ig_resultado_novo, ig_job_novo, ig_pronto_novo, ig_confirmar_novo, ig_publicar_novo], concurrency_limit=1)
 
-            aplicar.click(aplicar_com_progresso,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,transicao,duracao_transicao,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel],concurrency_limit=1)
+            aplicar.click(aplicar_com_transicoes_interface,[identificador,cortes,ativar_legendas,estilo,visual,tamanho,posicao,abertura,duracao_abertura,encerramento,duracao_encerramento,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,cortes_manuais,modo_legendas,legendas_manuais]+zoom_controles+fx_controles,[progresso_individual,resultado,download,arquivo_srt,status,pronto_individual,instagram_panel,sessao_revisao],concurrency_limit=1)
+
+            sessao_revisao.change(
+                carregar_editor_legendas,
+                inputs=[sessao_revisao],
+                outputs=[
+                    painel_revisao_legendas,
+                    tabela_revisao_legendas,
+                    status_revisao_legendas
+                ],
+                concurrency_limit=1
+            )
+
+            botao_restaurar_legendas.click(
+                restaurar_editor_legendas,
+                inputs=[sessao_revisao],
+                outputs=[
+                    tabela_revisao_legendas,
+                    status_revisao_legendas
+                ],
+                concurrency_limit=1
+            )
+
+            botao_reexportar_legendas.click(
+                reexportar_editor_legendas,
+                inputs=[
+                    sessao_revisao,
+                    tabela_revisao_legendas
+                ],
+                outputs=[
+                    resultado,
+                    download,
+                    arquivo_srt,
+                    status_revisao_legendas
+                ],
+                concurrency_limit=1
+            )
 
             aplicar.click(lambda: (None, False, '', gr.update(value=False), gr.update(interactive=False)), outputs=[ig_job_novo,ig_pronto_novo,ig_resultado_novo,ig_confirmar_novo,ig_publicar_novo], queue=False)
 
@@ -1280,9 +1483,10 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                     dados["posicao"],
 
-                    dados["transicao"],
-
-                    dados["duracao_transicao"],
+                    dados["abertura"],
+                    dados["duracao_abertura"],
+                    dados["encerramento"],
+                    dados["duracao_encerramento"],
 
                     dados["trilha"],
 
@@ -1346,9 +1550,10 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                     posicao,
 
-                    transicao,
-
-                    duracao_transicao,
+                    abertura,
+                    duracao_abertura,
+                    encerramento,
+                    duracao_encerramento,
 
                     trilha,
 
@@ -1412,9 +1617,13 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
             gr.Markdown('Selecione de 1 a 20 arquivos MP4 ou MOV. Você pode misturar os formatos no mesmo lote.',elem_classes=['helper'])
 
-            with gr.Accordion("Presets de edicao em lote", open=False):
+            arquivos_lote=gr.File(label='Selecionar vídeos MP4 ou MOV',file_count='multiple',file_types=['.mp4','.mov'],type='filepath')
 
-                gr.Markdown("Salve e reutilize suas configuracoes de edicao.")
+            gr.Markdown("### ② Presets de edição", elem_classes=["jw-section-heading"])
+
+            with gr.Accordion("Meus presets", open=True, elem_id="jw-presets-lote"):
+
+                gr.Markdown("Salve e reutilize suas configurações favoritas para acelerar a edição de vários vídeos.")
 
                 preset_nome_lote = gr.Textbox(
 
@@ -1448,9 +1657,8 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                 preset_status_lote = gr.Markdown("")
 
-            arquivos_lote=gr.File(label='Selecionar vídeos MP4 ou MOV',file_count='multiple',file_types=['.mp4','.mov'],type='filepath')
 
-            gr.Markdown('### ② Descreva a edição para todos',elem_classes=['jw-section-heading'])
+            gr.Markdown('### ③ Personalize a edição de todos os vídeos',elem_classes=['jw-section-heading'])
             with gr.Accordion("Templates EditAI", open=True):
                 seletor_template_lote = criar_seletor_templates()
 
@@ -1504,11 +1712,13 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                     with gr.Accordion('✨ Transições · Opcional',open=False):
 
-                        gr.Markdown('Cada vídeo recebe o efeito entre seus próprios cortes preservados. Os arquivos continuam sendo exportados separadamente; vídeos com um único trecho não precisam de transição.')
-
-                        transicao_lote=gr.Radio(choices=['Nenhuma','Dissolver','Fade para preto','Deslizar'],value='Nenhuma',label='Efeito para todos os vídeos')
-
-                        duracao_transicao_lote=gr.Slider(minimum=0.2,maximum=2.0,step=0.1,value=0.7,label='Duração por transição (segundos)')
+                        from promptvideo.features.edge_transitions import TRANSICOES_EXTREMIDADES
+                        gr.Markdown("Personalize o início e o fim do vídeo.")
+                        gr.HTML('<div class="jw-transition-warning" role="note"><strong>⚠ Tempo de processamento</strong><p>A aplicação de transições pode aumentar o tempo de edição, dependendo do efeito escolhido, da resolução do vídeo e do desempenho do computador.</p></div>')
+                        abertura_lote=gr.Dropdown(choices=list(TRANSICOES_EXTREMIDADES),value="Nenhuma",label="Transição de abertura")
+                        duracao_abertura_lote=gr.Slider(minimum=0.2,maximum=3.0,step=0.1,value=1.0,label="Duração da abertura (segundos)")
+                        encerramento_lote=gr.Dropdown(choices=list(TRANSICOES_EXTREMIDADES),value="Nenhuma",label="Transição de encerramento")
+                        duracao_encerramento_lote=gr.Slider(minimum=0.2,maximum=3.0,step=0.1,value=1.0,label="Duração do encerramento (segundos)")
 
                     with gr.Accordion('🎵 Música de fundo · Opcional',open=False):
 
@@ -1580,9 +1790,10 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
 
                 posicao_lote,
 
-                transicao_lote,
-
-                duracao_transicao_lote,
+                abertura_lote,
+                duracao_abertura_lote,
+                encerramento_lote,
+                duracao_encerramento_lote,
 
                 trilha_lote,
 
@@ -1682,8 +1893,10 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     dados["visual"],
                     dados["tamanho"],
                     dados["posicao"],
-                    dados["transicao"],
-                    dados["duracao_transicao"],
+                    dados["abertura"],
+                    dados["duracao_abertura"],
+                    dados["encerramento"],
+                    dados["duracao_encerramento"],
                     dados["trilha"],
                     dados["arquivo_musica"],
                     dados["volume_musica"],
@@ -1714,8 +1927,10 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                     visual_lote,
                     tamanho_lote,
                     posicao_lote,
-                    transicao_lote,
-                    duracao_transicao_lote,
+                    abertura_lote,
+                    duracao_abertura_lote,
+                    encerramento_lote,
+                    duracao_encerramento_lote,
                     trilha_lote,
                     arquivo_musica_lote,
                     volume_musica_lote,
@@ -1731,7 +1946,7 @@ with gr.Blocks(title='EditAI Videos JW — Editor inteligente de vídeos', **_bl
                 concurrency_limit=1,
             )
 
-            iniciar_lote.click(lote_com_progresso,[arquivos_lote,reduzir_ruido_lote,legendas_lote,estilo_lote,visual_lote,tamanho_lote,posicao_lote,transicao_lote,duracao_transicao_lote,trilha_lote,arquivo_musica_lote,volume_musica_lote,manter_audio_lote,fade_musica_lote,filtro_video_lote,intensidade_filtro_lote,brilho_filtro_lote,contraste_filtro_lote,eliminar_silencios_lote,segundos_silencio_lote,melhorar_audio_lote],[progresso_lote,download_lote,status_lote,pronto_lote],concurrency_limit=1)
+            iniciar_lote.click(lote_com_transicoes_interface,[arquivos_lote,reduzir_ruido_lote,legendas_lote,estilo_lote,visual_lote,tamanho_lote,posicao_lote,abertura_lote,duracao_abertura_lote,encerramento_lote,duracao_encerramento_lote,trilha_lote,arquivo_musica_lote,volume_musica_lote,manter_audio_lote,fade_musica_lote,filtro_video_lote,intensidade_filtro_lote,brilho_filtro_lote,contraste_filtro_lote,eliminar_silencios_lote,segundos_silencio_lote,melhorar_audio_lote],[progresso_lote,download_lote,status_lote,pronto_lote],concurrency_limit=1)
 
     gr.HTML('<footer id="jw-footer"><strong>EditAI Videos JW</strong><div>Desenvolvido por Jonathan Willian Gonçales Alves</div><small>Versão 0.9.8 Beta • Edição inteligente de vídeos • Processamento local</small></footer>')
 

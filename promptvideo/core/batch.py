@@ -30,7 +30,22 @@ def validar_lote(arquivos, instrucao, estilo):
         raise ValueError('Todos os arquivos devem ser vídeos MP4 ou MOV válidos.')
     return caminhos
 
-def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', callback=None, status_callback=None, visual='Clássica', tamanho=100, posicao='Inferior', transicao='Nenhuma', duracao_transicao=0.7, trilha='Sem música', arquivo_musica=None, volume_musica=20, manter_audio=True, fade_musica=True, filtro_video='Original', intensidade_filtro=60, brilho_filtro=0, contraste_filtro=0):
+def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', callback=None, status_callback=None, visual='Clássica', tamanho=100, posicao='Inferior', transicao='Nenhuma', duracao_transicao=0.7, trilha='Sem música', arquivo_musica=None, volume_musica=20, manter_audio=True, fade_musica=True, filtro_video='Original', intensidade_filtro=60, brilho_filtro=0, contraste_filtro=0, transicoes=None):
+    from promptvideo.features.subtitle_storage import (
+        normalizar_config_transicoes,
+    )
+
+    from promptvideo.features.edge_transitions import (
+        aplicar_transicoes_extremidades,
+    )
+
+    usar_novas_transicoes = transicoes is not None
+
+    transicoes = normalizar_config_transicoes(transicoes)
+
+    if usar_novas_transicoes:
+        transicao = "Nenhuma"
+
     caminhos = validar_lote(arquivos, instrucao, estilo)
     validar_aparencia(visual,tamanho,posicao)
     validar_transicao(transicao,duracao_transicao)
@@ -53,6 +68,12 @@ def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', cal
                 registro['srt']=str(srt)
             resultado=adicionar_musica(resultado,trilha,arquivo_musica,volume_musica,manter_audio,fade_musica,callback=lambda msg: emitir(indice,.99,msg))
             resultado=aplicar_filtro_video(resultado,filtro_video,intensidade_filtro,brilho_filtro,contraste_filtro,callback=lambda msg: emitir(indice,.995,msg))
+            resultado = aplicar_transicoes_extremidades(
+                resultado,
+                **transicoes,
+                callback=lambda msg: emitir(indice, .997, msg)
+            )
+
             registro['saida']=str(resultado)
             registro['status']='concluido'
             emitir(indice, 1.0, 'Concluído', 'concluido')
@@ -64,6 +85,8 @@ def executar_lote(arquivos, instrucao, legendas=False, estilo='Tradicional', cal
     stamp=datetime.now().strftime('%Y%m%d_%H%M%S_%f')
     pacote=SAIDAS / f'lote_{stamp}.zip'
     relatorio={'instrucoes':instrucao,'legendas':bool(legendas),'estilo':estilo,'visual':visual,'tamanho':tamanho,'posicao':posicao,'transicao':transicao,'duracao_transicao':float(duracao_transicao),'trilha':trilha,'volume_musica':float(volume_musica),'manter_audio':bool(manter_audio),'fade_musica':bool(fade_musica),'filtro_video':filtro_video,'intensidade_filtro':float(intensidade_filtro),'brilho_filtro':float(brilho_filtro),'contraste_filtro':float(contraste_filtro),'itens':registros}
+    relatorio["transicoes"] = transicoes
+
     with zipfile.ZipFile(pacote,'w',compression=zipfile.ZIP_DEFLATED) as z:
         nomes_usados = {'relatorio.json'}
         for registro in registros:
