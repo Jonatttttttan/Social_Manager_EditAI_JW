@@ -92,7 +92,7 @@ _TEMPLATES.update({
     # VIRAL
     "viral_impacto": _criar_template(
         "Viral", "Impacto",
-        "Edição energética para vídeos curtos.",
+        'Reduz pausas com limite de 1s, usa legendas grandes, música energética e cores vibrantes.',
         segundos_silencio=1,
         estilo="Din\u00e2mica",
         visual="Shorts",
@@ -106,7 +106,7 @@ _TEMPLATES.update({
 
     "viral_pulso": _criar_template(
         "Viral", "Pulso",
-        "Ritmo acelerado e palavras em destaque.",
+        'Reduz pausas, destaca palavras durante a fala e adiciona música tecnológica.',
         segundos_silencio=1,
         estilo="Din\u00e2mica",
         visual="Palavra destacada",
@@ -119,7 +119,7 @@ _TEMPLATES.update({
 
     "viral_neon": _criar_template(
         "Viral", "Neon",
-        "Estética digital e legendas luminosas.",
+        'Combina legendas luminosas, música digital e tonalidades cinematográficas frias.',
         segundos_silencio=1,
         estilo="Din\u00e2mica",
         visual="Neon",
@@ -133,7 +133,7 @@ _TEMPLATES.update({
     # LIMPO
     "limpo_essencial": _criar_template(
         "Limpo", "Essencial",
-        "Edição natural, clara e profissional.",
+        'Limpa o áudio, reduz pausas e adiciona legendas clássicas, sem música ou filtro visual.',
         segundos_silencio=2,
         visual="Cl\u00e1ssica",
         tamanho=90,
@@ -142,7 +142,7 @@ _TEMPLATES.update({
 
     "limpo_elegante": _criar_template(
         "Limpo", "Elegante",
-        "Visual discreto com acompanhamento de piano.",
+        'Legendas discretas, piano suave e tratamento visual leve.',
         visual="Minimalista",
         tamanho=85,
         trilha="Piano Calmo",
@@ -153,7 +153,7 @@ _TEMPLATES.update({
 
     "limpo_minimalista": _criar_template(
         "Limpo", "Minimalista",
-        "Legendas discretas e atmosfera leve.",
+        'Legendas pequenas, música ambiente e preservação das cores originais.',
         visual="Minimalista",
         tamanho=80,
         trilha="Ambient Suave",
@@ -163,7 +163,7 @@ _TEMPLATES.update({
     # CONVERSA
     "conversa_podcast": _criar_template(
         "Conversa", "Podcast",
-        "Destaque para a fala e o conteúdo.",
+        'Valoriza a fala com palavras destacadas, redução de pausas longas e sem música.',
         segundos_silencio=3,
         estilo="Din\u00e2mica",
         visual="Palavra destacada",
@@ -173,7 +173,7 @@ _TEMPLATES.update({
 
     "conversa_dialogo": _criar_template(
         "Conversa", "Di\u00e1logo",
-        "Preserva o ritmo natural da conversa.",
+        'Preserva as pausas naturais da conversa, com legendas clássicas e filtro suave.',
         eliminar_silencios=False,
         segundos_silencio=3,
         visual="Cl\u00e1ssica",
@@ -185,7 +185,7 @@ _TEMPLATES.update({
 
     "conversa_entrevista": _criar_template(
         "Conversa", "Entrevista",
-        "Apresentação profissional de depoimentos.",
+        'Legendas em caixa moderna, redução de pausas longas e sem música adicional.',
         segundos_silencio=4,
         visual="Caixa moderna",
         tamanho=95,
@@ -195,7 +195,7 @@ _TEMPLATES.update({
     # TUTORIAL
     "tutorial_professor": _criar_template(
         "Tutorial", "Professor",
-        "Clareza para aulas e explicações.",
+        'Legendas clássicas maiores e música discreta para aulas e explicações.',
         segundos_silencio=3,
         visual="Cl\u00e1ssica",
         tamanho=105,
@@ -205,7 +205,7 @@ _TEMPLATES.update({
 
     "tutorial_passo_a_passo": _criar_template(
         "Tutorial", "Passo a passo",
-        "Edição didática com destaque visual.",
+        'Legendas em caixa moderna, cores vibrantes e música leve para demonstrações.',
         visual="Caixa moderna",
         tamanho=110,
         trilha="Inspira\u00e7\u00e3o Leve",
@@ -216,7 +216,7 @@ _TEMPLATES.update({
 
     "tutorial_ciencia": _criar_template(
         "Tutorial", "Ci\u00eancia",
-        "Estilo documental para conteúdo científico.",
+        'Destaca palavras durante a explicação e adiciona trilha documental.',
         segundos_silencio=3,
         estilo="Din\u00e2mica",
         visual="Palavra destacada",
@@ -228,7 +228,7 @@ _TEMPLATES.update({
     # VLOG
     "vlog_lifestyle": _criar_template(
         "Vlog", "Lifestyle",
-        "Edição leve para momentos do cotidiano.",
+        'Legendas minimalistas, música leve e filtro suave para o cotidiano.',
         segundos_silencio=3,
         visual="Minimalista",
         tamanho=90,
@@ -240,7 +240,7 @@ _TEMPLATES.update({
 
     "vlog_viagem": _criar_template(
         "Vlog", "Viagem",
-        "Atmosfera acolhedora para paisagens e viagens.",
+        'Preserva pausas originais, adiciona música e tonalidades cinematográficas quentes.',
         eliminar_silencios=False,
         segundos_silencio=3,
         visual="Cl\u00e1ssica",
@@ -253,7 +253,7 @@ _TEMPLATES.update({
 
     "vlog_cinema": _criar_template(
         "Vlog", "Cinema",
-        "Atmosfera cinematográfica e acabamento visual.",
+        'Tonalidades frias, contraste reforcado, música cinematográfica e legendas discretas.',
         eliminar_silencios=False,
         segundos_silencio=4,
         visual="Minimalista",
